@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "record": "node scripts/record.js",
+    "record:local": "DEMO_LOCAL=1 node scripts/record.js",
+    "demo:local": "DEMO_LOCAL=1 node scripts/record.js && npm run trim && npm run keyframes && npm run render",
     "trim": "node scripts/trim.js",
     "keyframes": "node scripts/keyframes.js",
     "render": "remotion render remotion/index.ts DemoVideo output/demo.mp4",

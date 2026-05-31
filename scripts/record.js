@@ -44,6 +44,12 @@ const PUBLIC_MP4 = path.join(PUBLIC_DIR, 'raw.mp4');
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 800 };
 
+// Recording mode. DEMO_LOCAL=1 drives a local Chrome (great for localhost / dev servers)
+// instead of a Steel cloud browser. DEMO_HEADFUL=1 shows the window (default is headless).
+const truthy = (v) => ['1', 'true', 'yes'].includes(String(v || '').toLowerCase());
+const LOCAL = truthy(process.env.DEMO_LOCAL);
+const HEADFUL = truthy(process.env.DEMO_HEADFUL);
+
 // ---- Small helpers --------------------------------------------------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const humanPause = () => sleep(300 + Math.floor(Math.random() * 500)); // 300–800ms
@@ -72,6 +78,46 @@ function buildWsEndpoint(session, apiKey) {
   if (!url.searchParams.has('apiKey')) url.searchParams.set('apiKey', apiKey);
   if (!url.searchParams.has('sessionId')) url.searchParams.set('sessionId', session.id);
   return url.toString();
+}
+
+/** Find the Chrome Headless Shell that Remotion already downloaded for rendering. */
+function findRemotionChrome() {
+  const base = path.join(ROOT, 'node_modules', '.remotion', 'chrome-headless-shell');
+  if (!fs.existsSync(base)) return null;
+  for (const platform of fs.readdirSync(base)) {
+    const platformDir = path.join(base, platform);
+    if (!fs.statSync(platformDir).isDirectory()) continue;
+    for (const sub of fs.readdirSync(platformDir)) {
+      const exe = path.join(platformDir, sub, 'chrome-headless-shell');
+      if (fs.existsSync(exe)) return exe;
+    }
+  }
+  return null;
+}
+
+/**
+ * Locate a Chrome/Chromium executable for local-mode recording. Prefers an explicit
+ * CHROME_PATH, then a real installed browser (best fidelity), then Remotion's bundled
+ * headless shell so no extra download is needed.
+ */
+function resolveLocalChrome() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    findRemotionChrome(),
+  ].filter(Boolean);
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  throw new Error(
+    'No local Chrome/Chromium found. Install Google Chrome or set CHROME_PATH to an executable.',
+  );
 }
 
 /** Resolve a step's target element and return its center coordinates, or null. */
@@ -231,41 +277,65 @@ async function runStep(page, step, t0Ref, moments, index) {
 
 // ---- Main -----------------------------------------------------------------
 async function main() {
-  const apiKey = process.env.STEEL_API_KEY;
-  if (!apiKey) {
-    throw new Error('STEEL_API_KEY is not set. Add it to .env.local (it is read from the environment).');
-  }
-
   ensureDir(RECORDINGS_DIR);
   ensureDir(PUBLIC_DIR);
 
   const plan = loadBrowsePlan();
   const viewport = plan.viewport || DEFAULT_VIEWPORT;
 
-  const client = new Steel(); // reads STEEL_API_KEY from env automatically
   const moments = [];
   const t0Ref = { t: Date.now() };
 
-  let session;
+  let client; // Steel client (cloud mode only)
+  let session; // Steel session (cloud mode only)
   let browser;
   let screencast;
 
   try {
-    console.log('• Creating Steel session…');
-    session = await client.sessions.create({
-      dimensions: { width: viewport.width, height: viewport.height },
-      timeout: 600000,
-    });
-    console.log(`  session ${session.id} — viewer: ${session.sessionViewerUrl}`);
+    let page;
 
-    const wsEndpoint = buildWsEndpoint(session, apiKey);
-    browser = await puppeteer.connect({
-      browserWSEndpoint: wsEndpoint,
-      defaultViewport: viewport,
-    });
+    if (LOCAL) {
+      const executablePath = resolveLocalChrome();
+      console.log(`• Launching local Chrome (${HEADFUL ? 'headful' : 'headless'})`);
+      console.log(`  ${executablePath}`);
+      browser = await puppeteer.launch({
+        executablePath,
+        headless: !HEADFUL,
+        defaultViewport: viewport,
+        args: [
+          `--window-size=${viewport.width},${viewport.height}`,
+          '--hide-scrollbars',
+          '--force-device-scale-factor=1',
+          '--no-first-run',
+          '--no-default-browser-check',
+        ],
+      });
+      const pages = await browser.pages();
+      page = pages[0] || (await browser.newPage());
+    } else {
+      const apiKey = process.env.STEEL_API_KEY;
+      if (!apiKey) {
+        throw new Error(
+          'STEEL_API_KEY is not set. Add it to .env.local, or set DEMO_LOCAL=1 to record with a local browser.',
+        );
+      }
+      client = new Steel(); // reads STEEL_API_KEY from env automatically
+      console.log('• Creating Steel session…');
+      session = await client.sessions.create({
+        dimensions: { width: viewport.width, height: viewport.height },
+        timeout: 600000,
+      });
+      console.log(`  session ${session.id} — viewer: ${session.sessionViewerUrl}`);
 
-    const pages = await browser.pages();
-    const page = pages[0] || (await browser.newPage());
+      const wsEndpoint = buildWsEndpoint(session, apiKey);
+      browser = await puppeteer.connect({
+        browserWSEndpoint: wsEndpoint,
+        defaultViewport: viewport,
+      });
+      const pages = await browser.pages();
+      page = pages[0] || (await browser.newPage());
+    }
+
     await page.setViewport(viewport);
 
     console.log('• Starting screencast…');
@@ -293,7 +363,9 @@ async function main() {
     if (screencast) await screencast.stop();
     if (browser) {
       try {
-        await browser.disconnect();
+        // Local browsers must be closed (kills the process); cloud connections are disconnected.
+        if (LOCAL) await browser.close();
+        else await browser.disconnect();
       } catch (_e) {
         /* ignore */
       }
