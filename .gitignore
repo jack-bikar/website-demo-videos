@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.local
+recordings/
+output/
+public/
+scripts/*.json
+
+# keep the documented example plan
+!scripts/browse-plan.example.json

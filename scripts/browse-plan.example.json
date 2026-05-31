@@ -1,0 +1,54 @@
+{
+  "url": "https://app.example.com",
+  "viewport": { "width": 1280, "height": 800 },
+  "steps": [
+    {
+      "type": "navigate",
+      "target": "https://app.example.com/signup",
+      "text": null,
+      "deltaY": null,
+      "ms": null,
+      "why": "Land on the signup page so viewers see where the flow starts"
+    },
+    {
+      "type": "wait",
+      "target": null,
+      "text": null,
+      "deltaY": null,
+      "ms": 1200,
+      "why": "Let the signup form finish loading before interacting"
+    },
+    {
+      "type": "type",
+      "target": "input[name=\"email\"]",
+      "text": "demo@example.com",
+      "deltaY": null,
+      "ms": null,
+      "why": "Show entering an email to create an account"
+    },
+    {
+      "type": "type",
+      "target": "input[name=\"password\"]",
+      "text": "Sup3rSecret!",
+      "deltaY": null,
+      "ms": null,
+      "why": "Show entering a password"
+    },
+    {
+      "type": "click",
+      "target": "::-p-text(Create account)",
+      "text": null,
+      "deltaY": null,
+      "ms": null,
+      "why": "Submit the signup form — the core conversion moment"
+    },
+    {
+      "type": "wait",
+      "target": null,
+      "text": null,
+      "deltaY": null,
+      "ms": 1500,
+      "why": "Wait for the dashboard to load after signup"
+    }
+  ]
+}

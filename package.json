@@ -1,0 +1,19 @@
+{
+  "name": "website-demo-videos",
+  "private": true,
+  "scripts": {
+    "record": "node scripts/record.js",
+    "trim": "node scripts/trim.js",
+    "keyframes": "node scripts/keyframes.js",
+    "render": "remotion render remotion/index.ts DemoVideo output/demo.mp4",
+    "studio": "remotion studio remotion/index.ts",
+    "demo": "npm run record && npm run trim && npm run keyframes && npm run render"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.469",
+    "@remotion/renderer": "^4.0.469",
+    "puppeteer-core": "^25.1.0",
+    "remotion": "^4.0.469",
+    "steel-sdk": "^0.18.0"
+  }
+}
