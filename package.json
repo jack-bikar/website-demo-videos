@@ -4,6 +4,7 @@
   "scripts": {
     "record": "node scripts/record.js",
     "record:local": "DEMO_LOCAL=1 node scripts/record.js",
+    "record:connect": "DEMO_CONNECT_URL=${DEMO_CONNECT_URL:-http://127.0.0.1:9222} node scripts/record.js",
     "demo:local": "DEMO_LOCAL=1 node scripts/record.js && npm run trim && npm run keyframes && npm run render",
     "trim": "node scripts/trim.js",
     "keyframes": "node scripts/keyframes.js",

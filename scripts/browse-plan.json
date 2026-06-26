@@ -1,0 +1,28 @@
+{
+  "url": "http://localhost:8731",
+  "viewport": { "width": 1280, "height": 800 },
+
+  "recording": {
+    "mode": "local",
+    "connectUrl": "http://127.0.0.1:9222",
+    "headful": false,
+    "userDataDir": null,
+    "chromePath": null
+  },
+
+  "meta": {
+    "title": "Acme Demo",
+    "subtitle": "From email to welcome in two clicks",
+    "outro": { "title": "Try it yourself", "subtitle": "localhost:8731" },
+    "playbackSpeed": 4,
+    "captions": true
+  },
+
+  "steps": [
+    { "type": "navigate", "target": "http://localhost:8731", "text": null, "deltaY": null, "ms": null, "speed": null, "as": null, "caption": "Open the app", "why": "Land on the home screen" },
+    { "type": "wait", "target": null, "text": null, "deltaY": null, "ms": 600, "speed": null, "as": null, "caption": null, "why": "Let the page settle" },
+    { "type": "type", "target": "#email", "text": "demo@local.test", "deltaY": null, "ms": null, "speed": 2, "as": null, "caption": "Enter your email", "why": "Type slower (2x) so it's readable" },
+    { "type": "click", "target": "#go", "text": null, "deltaY": null, "ms": null, "speed": null, "as": null, "caption": "Submit", "why": "Show the welcome message" },
+    { "type": "wait", "target": null, "text": null, "deltaY": null, "ms": 800, "speed": null, "as": null, "caption": null, "why": "Hold on the result" }
+  ]
+}

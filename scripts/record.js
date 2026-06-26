@@ -44,16 +44,59 @@ const PUBLIC_MP4 = path.join(PUBLIC_DIR, 'raw.mp4');
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 800 };
 
-// Recording mode. DEMO_LOCAL=1 drives a local Chrome (great for localhost / dev servers)
-// instead of a Steel cloud browser. DEMO_HEADFUL=1 shows the window (default is headless).
+// Chrome DevTools Protocol calls (e.g. Runtime.callFunctionOn) default to a ~30s timeout,
+// which a busy authenticated SPA can blow past. Bump it generously for every connection.
+const PROTOCOL_TIMEOUT = 180000;
+
 const truthy = (v) => ['1', 'true', 'yes'].includes(String(v || '').toLowerCase());
-const LOCAL = truthy(process.env.DEMO_LOCAL);
-const HEADFUL = truthy(process.env.DEMO_HEADFUL);
+
+/**
+ * Resolve the recording mode from the plan's `recording` block, with environment variables as
+ * optional overrides (handy for CI / one-off runs). Everything lives in browse-plan.json so the
+ * whole demo is configured in one file; env vars just win when present.
+ *
+ *   mode "cloud"    create a Steel Dev cloud browser session (needs STEEL_API_KEY).
+ *   mode "local"    launch a fresh local Chrome (great for localhost / dev servers).
+ *   mode "connect"  attach to an already-running, already-authenticated Chrome exposing a
+ *                   remote-debugging port (e.g. http://127.0.0.1:9222) — this is how authed
+ *                   apps (Clerk/OAuth) record, by reusing a live logged-in session.
+ */
+function resolveRecordingConfig(plan) {
+  const r = (plan && plan.recording) || {};
+  const env = process.env;
+  // Env overrides: DEMO_CONNECT_URL implies connect, DEMO_LOCAL=1 implies local.
+  const connectUrl = (env.DEMO_CONNECT_URL || r.connectUrl || '').trim() || null;
+  let mode = r.mode || 'cloud';
+  if (env.DEMO_CONNECT_URL) mode = 'connect';
+  else if (truthy(env.DEMO_LOCAL)) mode = 'local';
+  if (mode === 'connect' && !connectUrl) {
+    throw new Error('recording.mode is "connect" but no connectUrl/DEMO_CONNECT_URL was provided.');
+  }
+  return {
+    mode,
+    connectUrl,
+    headful: env.DEMO_HEADFUL !== undefined ? truthy(env.DEMO_HEADFUL) : !!r.headful,
+    userDataDir: env.DEMO_USER_DATA_DIR || r.userDataDir || undefined,
+    chromePath: env.CHROME_PATH || r.chromePath || undefined,
+  };
+}
 
 // ---- Small helpers --------------------------------------------------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const humanPause = () => sleep(300 + Math.floor(Math.random() * 500)); // 300–800ms
 const ensureDir = (d) => fs.mkdirSync(d, { recursive: true });
+
+/**
+ * Substitute {{name}} placeholders with values captured earlier in the run (see the
+ * `capture` step type). Unknown names are left intact so a typo is visible in the output
+ * rather than silently blanked. Used on a step's target and text so a value generated at
+ * runtime (e.g. an access code) can be carried forward into a later step.
+ */
+const TEMPLATE_RE = /\{\{\s*([\w.-]+)\s*\}\}/g;
+function applyVars(value, vars) {
+  if (typeof value !== 'string') return value;
+  return value.replace(TEMPLATE_RE, (whole, name) => (name in vars ? String(vars[name]) : whole));
+}
 
 function loadBrowsePlan() {
   if (!fs.existsSync(BROWSE_PLAN)) {
@@ -97,12 +140,12 @@ function findRemotionChrome() {
 
 /**
  * Locate a Chrome/Chromium executable for local-mode recording. Prefers an explicit
- * CHROME_PATH, then a real installed browser (best fidelity), then Remotion's bundled
- * headless shell so no extra download is needed.
+ * chromePath (from recording.chromePath / CHROME_PATH), then a real installed browser (best
+ * fidelity), then Remotion's bundled headless shell so no extra download is needed.
  */
-function resolveLocalChrome() {
+function resolveLocalChrome(chromePath) {
   const candidates = [
-    process.env.CHROME_PATH,
+    chromePath,
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
     '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
@@ -116,14 +159,35 @@ function resolveLocalChrome() {
     if (fs.existsSync(c)) return c;
   }
   throw new Error(
-    'No local Chrome/Chromium found. Install Google Chrome or set CHROME_PATH to an executable.',
+    'No local Chrome/Chromium found. Install Google Chrome or set recording.chromePath (or CHROME_PATH).',
   );
+}
+
+/**
+ * Wait for a selector, retrying a few times before giving up. A single waitForSelector can
+ * lose a race on a busy SPA (element briefly detaches/re-renders); a short retry loop makes
+ * plans far more robust. Prefer stable hooks like [data-tour="…"] / [data-testid="…"] in the
+ * plan so selectors survive copy and layout changes.
+ */
+async function waitForSelectorRetry(page, selector, { timeout = 8000, retries = 2 } = {}) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const el = await page.waitForSelector(selector, { timeout });
+      if (el) return el;
+    } catch (e) {
+      lastErr = e;
+    }
+    if (attempt < retries) await sleep(400);
+  }
+  if (lastErr) throw lastErr;
+  return null;
 }
 
 /** Resolve a step's target element and return its center coordinates, or null. */
 async function centerOf(page, selector) {
   try {
-    const el = await page.waitForSelector(selector, { timeout: 8000 });
+    const el = await waitForSelectorRetry(page, selector);
     if (!el) return { handle: null, x: null, y: null };
     const box = await el.boundingBox();
     if (!box) return { handle: el, x: null, y: null };
@@ -225,31 +289,49 @@ function encodeFrames(frames, outPath) {
 }
 
 // ---- Step execution -------------------------------------------------------
-async function runStep(page, step, t0Ref, moments, index) {
+async function runStep(page, step, t0Ref, moments, index, vars) {
   const type = step.type;
+  // Resolve {{var}} placeholders against values captured earlier in the run.
+  const target = applyVars(step.target, vars);
+  const text = applyVars(step.text, vars);
   let x = null;
   let y = null;
 
   switch (type) {
     case 'navigate': {
-      await page.goto(step.target, { waitUntil: 'networkidle2', timeout: 45000 });
+      await page.goto(target, { waitUntil: 'networkidle2', timeout: 45000 });
       break;
     }
     case 'click': {
-      const { handle, x: cx, y: cy } = await centerOf(page, step.target);
-      if (!handle) throw new Error(`Selector not found for click: ${step.target}`);
+      const { handle, x: cx, y: cy } = await centerOf(page, target);
+      if (!handle) throw new Error(`Selector not found for click: ${target}`);
       x = cx;
       y = cy;
       await handle.click();
       break;
     }
     case 'type': {
-      const { handle, x: cx, y: cy } = await centerOf(page, step.target);
-      if (!handle) throw new Error(`Selector not found for type: ${step.target}`);
+      const { handle, x: cx, y: cy } = await centerOf(page, target);
+      if (!handle) throw new Error(`Selector not found for type: ${target}`);
       x = cx;
       y = cy;
       await handle.click();
-      await handle.type(String(step.text ?? ''), { delay: 60 }); // char-by-char, human-like
+      await handle.type(String(text ?? ''), { delay: 60 }); // char-by-char, human-like
+      break;
+    }
+    case 'capture': {
+      // Read a value rendered at runtime (e.g. a generated access code) and stash it under
+      // step.as so a later step can reference it with {{as}}. We zoom to it like any action.
+      if (!step.as) throw new Error('capture step requires an "as" field to name the value.');
+      const { handle, x: cx, y: cy } = await centerOf(page, target);
+      if (!handle) throw new Error(`Selector not found for capture: ${target}`);
+      x = cx;
+      y = cy;
+      const value = String(
+        await page.evaluate((el) => (el.value ?? el.textContent ?? '').trim(), handle),
+      );
+      vars[step.as] = value;
+      console.log(`  ⧉ captured ${step.as} = ${JSON.stringify(value)}`);
       break;
     }
     case 'scroll': {
@@ -265,13 +347,18 @@ async function runStep(page, step, t0Ref, moments, index) {
       throw new Error(`Unknown step type: ${type}`);
   }
 
-  moments.push({
+  const moment = {
     time: Date.now() - t0Ref.t,
-    action: step.why || step.target || type,
+    // `caption` is the authored, on-screen scene description; `why` is the debug note. Fall
+    // back through caption → why → target → type so a lower-third always has something to show.
+    action: step.caption || step.why || target || type,
     type,
     x,
     y,
-  });
+  };
+  // Optional per-step playback speed (a "per-section" override the composition honors).
+  if (Number.isFinite(step.speed)) moment.speed = step.speed;
+  moments.push(moment);
   console.log(`  ✓ step ${index + 1} (${type})${x != null ? ` @ ${x},${y}` : ''}`);
 }
 
@@ -282,8 +369,10 @@ async function main() {
 
   const plan = loadBrowsePlan();
   const viewport = plan.viewport || DEFAULT_VIEWPORT;
+  const rec = resolveRecordingConfig(plan);
 
   const moments = [];
+  const vars = {}; // runtime values captured by `capture` steps, referenced via {{name}}
   const t0Ref = { t: Date.now() };
 
   let client; // Steel client (cloud mode only)
@@ -294,14 +383,34 @@ async function main() {
   try {
     let page;
 
-    if (LOCAL) {
-      const executablePath = resolveLocalChrome();
-      console.log(`• Launching local Chrome (${HEADFUL ? 'headful' : 'headless'})`);
+    if (rec.mode === 'connect') {
+      // Attach to an already-running, already-authenticated Chrome (started with
+      // --remote-debugging-port). Reuses its live session, so Clerk/OAuth-gated apps record
+      // logged in. We connect rather than launch, so we must NOT close it on teardown.
+      console.log(`• Connecting to existing Chrome at ${rec.connectUrl}…`);
+      browser = await puppeteer.connect({
+        browserURL: rec.connectUrl,
+        protocolTimeout: PROTOCOL_TIMEOUT,
+        defaultViewport: viewport,
+      });
+      const pages = await browser.pages();
+      page = pages.find((p) => /^https?:/.test(p.url())) || pages[0] || (await browser.newPage());
+      await page.bringToFront();
+    } else if (rec.mode === 'local') {
+      const executablePath = resolveLocalChrome(rec.chromePath);
+      // Optional: reuse a pre-authenticated Chrome profile so the recording starts logged in
+      // (recording.userDataDir / DEMO_USER_DATA_DIR). Must be an unlocked copy — Chrome locks a
+      // profile while another instance has it open.
+      const userDataDir = rec.userDataDir;
+      console.log(`• Launching local Chrome (${rec.headful ? 'headful' : 'headless'})`);
       console.log(`  ${executablePath}`);
+      if (userDataDir) console.log(`  profile: ${userDataDir}`);
       browser = await puppeteer.launch({
         executablePath,
-        headless: !HEADFUL,
+        headless: !rec.headful,
         defaultViewport: viewport,
+        protocolTimeout: PROTOCOL_TIMEOUT,
+        userDataDir,
         args: [
           `--window-size=${viewport.width},${viewport.height}`,
           '--hide-scrollbars',
@@ -316,7 +425,7 @@ async function main() {
       const apiKey = process.env.STEEL_API_KEY;
       if (!apiKey) {
         throw new Error(
-          'STEEL_API_KEY is not set. Add it to .env.local, or set DEMO_LOCAL=1 to record with a local browser.',
+          'STEEL_API_KEY is not set. Add it to .env.local, or set recording.mode to "local"/"connect".',
         );
       }
       client = new Steel(); // reads STEEL_API_KEY from env automatically
@@ -331,6 +440,7 @@ async function main() {
       browser = await puppeteer.connect({
         browserWSEndpoint: wsEndpoint,
         defaultViewport: viewport,
+        protocolTimeout: PROTOCOL_TIMEOUT,
       });
       const pages = await browser.pages();
       page = pages[0] || (await browser.newPage());
@@ -345,7 +455,7 @@ async function main() {
     for (let i = 0; i < plan.steps.length; i++) {
       const step = plan.steps[i];
       try {
-        await runStep(page, step, t0Ref, moments, i);
+        await runStep(page, step, t0Ref, moments, i, vars);
       } catch (err) {
         console.warn(`  ⚠ step ${i + 1} (${step.type}) failed: ${err.message} — continuing.`);
         try {
@@ -363,8 +473,9 @@ async function main() {
     if (screencast) await screencast.stop();
     if (browser) {
       try {
-        // Local browsers must be closed (kills the process); cloud connections are disconnected.
-        if (LOCAL) await browser.close();
+        // A browser we launched must be closed (kills the process); one we connected to
+        // (cloud session or connect-mode Chrome) is only disconnected so it keeps running.
+        if (rec.mode === 'local') await browser.close();
         else await browser.disconnect();
       } catch (_e) {
         /* ignore */

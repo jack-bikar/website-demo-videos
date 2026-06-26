@@ -6,5 +6,5 @@ output/
 public/
 scripts/*.json
 
-# keep the documented example plan
-!scripts/browse-plan.example.json
+# keep browse-plan.json — it's the single config file you edit, and the composition imports it
+!scripts/browse-plan.json

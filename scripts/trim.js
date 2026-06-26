@@ -48,6 +48,8 @@ function main() {
     end: m.time + TAIL_MS,
     action: m.action,
     type: m.type,
+    // optional per-section playback speed carried from the plan (composition honors it)
+    speed: m.speed,
     // keep the original action time around for the dead-air check below
     _t: m.time,
   }));
@@ -79,8 +81,13 @@ function main() {
   }
   clips.push(current);
 
-  // Strip the internal _t helper before writing.
-  const output = clips.map(({ start, end, action, type }) => ({ start, end, action, type }));
+  // Strip the internal _t helper before writing; keep `speed` only when one was set (the
+  // first action's speed wins for a merged clip, matching its lead-in label).
+  const output = clips.map(({ start, end, action, type, speed }) => {
+    const clip = { start, end, action, type };
+    if (Number.isFinite(speed)) clip.speed = speed;
+    return clip;
+  });
 
   fs.writeFileSync(CLIPS_OUT, JSON.stringify(output, null, 2));
 
