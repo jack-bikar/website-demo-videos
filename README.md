@@ -72,7 +72,8 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
     "subtitle": "From email to welcome in two clicks",
     "outro": { "title": "Try it yourself", "subtitle": "localhost:8731" }, // outro CTA card (omit to skip)
     "playbackSpeed": 4,                      // global footage speed-up (per-step `speed` overrides it)
-    "captions": true                         // false = no cards and no lower-third subtitles
+    "captions": true,                        // false = no cards and no lower-third subtitles
+    "zoom": true                             // false = steady shot, no per-action zoom in/out
   },
 
   "steps": [

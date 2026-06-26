@@ -64,7 +64,8 @@ track, playback speed, and steps all live here and drive both the recording and 
     "subtitle": "Share work with a single code",
     "outro": { "title": "Try it free", "subtitle": "app.example.com" }, // outro CTA card
     "playbackSpeed": 4,                      // global speed-up default (per-step `speed` overrides)
-    "captions": true                         // set false to disable all on-screen text
+    "captions": true,                        // set false to disable all on-screen text
+    "zoom": true                             // set false for a steady shot (no per-action zoom in/out)
   },
   "steps": [
     {
@@ -185,6 +186,8 @@ background, and centers the footage in a rounded, soft-shadowed browser frame.
 Driven by the plan's `meta`:
 - **Playback speed** defaults to **4×** but is configurable globally (`meta.playbackSpeed`) and per clip
   (a step's `speed`) — e.g. slow form-fills to 2× while clicks stay fast.
+- **Camera zoom** is on by default; set `meta.zoom: false` for a steady, un-zoomed shot (Stage 4 then
+  emits no keyframes). Omitting `meta.title`/`meta.intro` skips the intro card so the video opens on the site.
 - **Caption track:** an intro title card (`meta.title`/`subtitle`), per-clip lower-third subtitles (each
   clip's authored `caption`/`action`), and an outro CTA card (`meta.outro`). Set `meta.captions: false`
   to turn all of it off. With no `meta`, it behaves as before: no cards, and lower-thirds simply show each

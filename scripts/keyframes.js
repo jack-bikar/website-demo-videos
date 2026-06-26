@@ -59,6 +59,15 @@ function main() {
     console.log('No moments — wrote empty keyframes.json.');
     return;
   }
+
+  // Camera zoom is opt-out via the plan's `meta.zoom: false`. With no keyframes the composition
+  // holds a steady, un-zoomed shot (no in/out per action).
+  const plan = readJson(BROWSE_PLAN, {});
+  if (plan && plan.meta && plan.meta.zoom === false) {
+    fs.writeFileSync(KEYFRAMES_OUT, JSON.stringify([], null, 2));
+    console.log('✓ Camera zoom disabled (meta.zoom: false) — wrote empty keyframes.json.');
+    return;
+  }
   if (!Array.isArray(clips) || clips.length === 0) {
     console.warn('⚠ clips.json is empty — run "npm run trim" first. Generating keyframes from moments anyway.');
   }

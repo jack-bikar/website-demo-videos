@@ -59,29 +59,51 @@ const CARD_FRAMES = Math.round(2.6 * FPS); // length of an intro/outro card
 export const INTRO_FRAMES = introCard ? CARD_FRAMES : 0;
 export const OUTRO_FRAMES = outroCard ? CARD_FRAMES : 0;
 
-// The browser captured at this size; the composition matches it (see Root.tsx).
+// The footage fills the whole frame (the website always takes the entire screen).
 const VIDEO_W = 1280;
 const VIDEO_H = 800;
-// Scale the framed unit down so the gradient background shows as a margin.
-const BASE_FIT = 0.86;
+
+// Crossfade length between consecutive clips, and the opening/closing fade from/to black.
+// Long and even so scene changes feel slow and smooth rather than hard cuts.
+const TRANSITION_FRAMES = Math.round(0.6 * FPS); // ~0.6s dissolve
 
 const msToFrames = (ms: number) => (ms / 1000) * FPS;
 
 /** Output-frame length of a clip after its (possibly per-clip) speed-up. */
 const clipOutputFrames = (clip: Clip) => Math.max(1, Math.round(msToFrames(clip.end - clip.start) / clipSpeed(clip)));
 
-/** Total output frames the clip track occupies (no intro/outro). */
-export const clipsTotalFrames = (cs: Clip[]) => cs.reduce((sum, c) => sum + clipOutputFrames(c), 0);
+/**
+ * Lay clips on the output timeline with overlapping crossfades. Each clip starts while the
+ * previous one is still on screen and fades in over the overlap, so scenes dissolve into one
+ * another. The crossfade is clamped to a fraction of the shorter neighbour so short clips don't
+ * fully overlap. Returns absolute `from`/`durationInFrames` plus the fade lengths to apply.
+ */
+type Placed = { clip: Clip; from: number; durationInFrames: number; fadeIn: number; fadeOut: number };
+export function layoutClips(cs: Clip[]): { placed: Placed[]; totalFrames: number } {
+  const dur = cs.map(clipOutputFrames);
+  const fadeBetween = (a: number, b: number) => Math.min(TRANSITION_FRAMES, Math.floor(Math.min(a, b) * 0.4));
 
-/** Full composition length: intro card + clips + outro card. Consumed by Root.tsx. */
-export const totalDurationInFrames = (cs: Clip[]) => INTRO_FRAMES + clipsTotalFrames(cs) + OUTRO_FRAMES;
+  const placed: Placed[] = [];
+  let cursor = 0;
+  for (let i = 0; i < cs.length; i++) {
+    const fadeIn = i === 0 ? Math.min(TRANSITION_FRAMES, Math.floor(dur[i] * 0.4)) : fadeBetween(dur[i - 1], dur[i]);
+    const fadeOut = i === cs.length - 1 ? Math.min(TRANSITION_FRAMES, Math.floor(dur[i] * 0.4)) : 0;
+    placed.push({ clip: cs[i], from: cursor, durationInFrames: dur[i], fadeIn, fadeOut });
+    // Advance so the next clip overlaps this one by their shared crossfade.
+    const fadeToNext = i < cs.length - 1 ? fadeBetween(dur[i], dur[i + 1]) : 0;
+    cursor += dur[i] - fadeToNext;
+  }
+  const totalFrames = placed.length ? placed[placed.length - 1].from + placed[placed.length - 1].durationInFrames : 0;
+  return { placed, totalFrames };
+}
+
+/** Full composition length: intro card + crossfaded clip track + outro card. Consumed by Root.tsx. */
+export const totalDurationInFrames = (cs: Clip[]) => INTRO_FRAMES + layoutClips(cs).totalFrames + OUTRO_FRAMES;
 
 // ---- Camera (zoom) --------------------------------------------------------
 /**
- * Drives a smooth zoom for a single clip. Keyframes whose timestamps fall inside the clip
- * are mapped onto the clip's local (sped-up) output timeline, then interpolate() animates
- * scale + focal point between them. spring() adds a soft settle on the focal point so the
- * camera eases rather than snapping.
+ * Drives a smooth zoom for a single clip when keyframes exist (zoom is opt-out via
+ * `meta.zoom: false`, which makes keyframes.json empty — then this is a steady, un-zoomed shot).
  */
 const ClipCamera: React.FC<{ clip: Clip; children: React.ReactNode }> = ({ clip, children }) => {
   const frame = useCurrentFrame();
@@ -123,53 +145,15 @@ const ClipCamera: React.FC<{ clip: Clip; children: React.ReactNode }> = ({ clip,
     });
   }
 
-  // Soft spring settle (0 → 1) blends the resting frame toward the interpolated zoom,
-  // so the very start of each clip eases in instead of popping.
   const settle = spring({ frame, fps, config: { damping: 200, mass: 0.6 }, durationInFrames: 18 });
   const easedScale = 1 + (scale - 1) * settle;
 
   return (
-    <div
-      style={{
-        width: VIDEO_W,
-        height: VIDEO_H,
-        transform: `scale(${easedScale})`,
-        transformOrigin: `${originX}px ${originY}px`,
-      }}
-    >
+    <AbsoluteFill style={{ transform: `scale(${easedScale})`, transformOrigin: `${originX}px ${originY}px` }}>
       {children}
-    </div>
+    </AbsoluteFill>
   );
 };
-
-// ---- Browser chrome -------------------------------------------------------
-const BrowserFrame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div
-    style={{
-      borderRadius: 16,
-      overflow: 'hidden',
-      boxShadow: '0 40px 120px rgba(0, 0, 0, 0.55), 0 8px 24px rgba(0, 0, 0, 0.35)',
-      background: '#0b1020',
-      border: '1px solid rgba(255, 255, 255, 0.08)',
-    }}
-  >
-    <div
-      style={{
-        height: 36,
-        background: 'linear-gradient(180deg, #1b2336 0%, #141a2b 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        paddingLeft: 16,
-        gap: 8,
-      }}
-    >
-      {['#ff5f57', '#febc2e', '#28c840'].map((c) => (
-        <div key={c} style={{ width: 12, height: 12, borderRadius: '50%', background: c }} />
-      ))}
-    </div>
-    <div style={{ width: VIDEO_W, height: VIDEO_H, position: 'relative', overflow: 'hidden' }}>{children}</div>
-  </div>
-);
 
 // ---- Caption track --------------------------------------------------------
 /** Fade 0 → 1 over the first `fade` frames and back to 0 over the last `fade` of `len`. */
@@ -179,13 +163,13 @@ const fadeEnvelope = (frame: number, len: number, fade = 10) =>
     extrapolateRight: 'clamp',
   });
 
-/** Lower-third subtitle pill, drawn over the whole frame (not the zoomed footage). */
+/** Lower-third subtitle pill, drawn over the footage. */
 const LowerThird: React.FC<{ text: string; durationInFrames: number }> = ({ text, durationInFrames }) => {
   const frame = useCurrentFrame();
-  const opacity = fadeEnvelope(frame, durationInFrames, 9);
-  const lift = interpolate(frame, [0, 12], [16, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const opacity = fadeEnvelope(frame, durationInFrames, 14);
+  const lift = interpolate(frame, [0, 16], [16, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   return (
-    <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 64 }}>
+    <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 56 }}>
       <div
         style={{
           opacity,
@@ -212,15 +196,22 @@ const LowerThird: React.FC<{ text: string; durationInFrames: number }> = ({ text
   );
 };
 
-/** Full-screen intro / outro card with a title and subtitle. */
+/** Full-screen intro / outro card with a title and subtitle (only when meta provides one). */
 const TitleCard: React.FC<{ card: Card; durationInFrames: number }> = ({ card, durationInFrames }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const opacity = fadeEnvelope(frame, durationInFrames, 14);
+  const opacity = fadeEnvelope(frame, durationInFrames, 16);
   const rise = spring({ frame, fps, config: { damping: 200, mass: 0.7 }, durationInFrames: 26 });
   const translateY = interpolate(rise, [0, 1], [22, 0]);
   return (
-    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', opacity }}>
+    <AbsoluteFill
+      style={{
+        justifyContent: 'center',
+        alignItems: 'center',
+        opacity,
+        background: 'linear-gradient(135deg, #0a0f24 0%, #131a3a 45%, #2a2065 100%)',
+      }}
+    >
       <div
         style={{
           transform: `translateY(${translateY}px)`,
@@ -243,66 +234,68 @@ const TitleCard: React.FC<{ card: Card; durationInFrames: number }> = ({ card, d
 
 // ---- Composition ----------------------------------------------------------
 export const DemoVideo: React.FC = () => {
-  // Cumulative output-frame offset for each clip Sequence, within the clip track.
-  let cursor = 0;
-  const placed = clips.map((clip) => {
-    const from = cursor;
-    const durationInFrames = clipOutputFrames(clip);
-    cursor += durationInFrames;
-    return { clip, from, durationInFrames };
-  });
-  const clipTrackFrames = cursor;
+  const { placed, totalFrames } = layoutClips(clips);
 
   return (
-    <AbsoluteFill
-      style={{
-        // Dark navy → indigo gradient, suited to a SaaS product.
-        background: 'linear-gradient(135deg, #0a0f24 0%, #131a3a 45%, #2a2065 100%)',
-      }}
-    >
+    <AbsoluteFill style={{ background: '#05070f' }}>
       {introCard ? (
         <Sequence from={0} durationInFrames={INTRO_FRAMES}>
           <TitleCard card={introCard} durationInFrames={INTRO_FRAMES} />
         </Sequence>
       ) : null}
 
-      {/* Footage + camera, shifted past the intro card. */}
-      <Sequence from={INTRO_FRAMES} durationInFrames={Math.max(1, clipTrackFrames)}>
-        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
-          <div style={{ transform: `scale(${BASE_FIT})` }}>
-            <BrowserFrame>
-              {placed.map(({ clip, from, durationInFrames }, i) => (
-                <Sequence key={i} from={from} durationInFrames={durationInFrames}>
-                  <ClipCamera clip={clip}>
-                    <OffthreadVideo
-                      src={staticFile('raw.mp4')}
-                      startFrom={Math.round(msToFrames(clip.start))}
-                      playbackRate={clipSpeed(clip)}
-                      muted
-                      style={{ width: VIDEO_W, height: VIDEO_H, objectFit: 'cover' }}
-                    />
-                  </ClipCamera>
-                </Sequence>
-              ))}
-            </BrowserFrame>
-          </div>
-        </AbsoluteFill>
-      </Sequence>
+      {/* Full-bleed footage. Clips overlap and fade so scenes dissolve into one another. */}
+      {placed.map(({ clip, from, durationInFrames, fadeIn, fadeOut }, i) => (
+        <Sequence key={i} from={INTRO_FRAMES + from} durationInFrames={durationInFrames}>
+          <ClipFootage clip={clip} durationInFrames={durationInFrames} fadeIn={fadeIn} fadeOut={fadeOut} />
+        </Sequence>
+      ))}
 
-      {/* Lower-third captions, overlaid above the footage (so they aren't zoomed). */}
+      {/* Lower-third captions, overlaid above the footage. */}
       {captionsEnabled
-        ? placed.map(({ clip, from, durationInFrames }, i) => (
-            <Sequence key={`cap-${i}`} from={INTRO_FRAMES + from} durationInFrames={durationInFrames}>
-              <LowerThird text={clip.action} durationInFrames={durationInFrames} />
-            </Sequence>
-          ))
+        ? placed.map(({ clip, from, durationInFrames }, i) => {
+            // End where the next clip begins so consecutive captions don't overlap.
+            const capDuration = i < placed.length - 1 ? placed[i + 1].from - from : durationInFrames;
+            return (
+              <Sequence key={`cap-${i}`} from={INTRO_FRAMES + from} durationInFrames={Math.max(1, capDuration)}>
+                <LowerThird text={clip.action} durationInFrames={Math.max(1, capDuration)} />
+              </Sequence>
+            );
+          })
         : null}
 
       {outroCard ? (
-        <Sequence from={INTRO_FRAMES + clipTrackFrames} durationInFrames={OUTRO_FRAMES}>
+        <Sequence from={INTRO_FRAMES + totalFrames} durationInFrames={OUTRO_FRAMES}>
           <TitleCard card={outroCard} durationInFrames={OUTRO_FRAMES} />
         </Sequence>
       ) : null}
+    </AbsoluteFill>
+  );
+};
+
+/** One clip of footage filling the screen, with crossfade in/out opacity. */
+const ClipFootage: React.FC<{ clip: Clip; durationInFrames: number; fadeIn: number; fadeOut: number }> = ({
+  clip,
+  durationInFrames,
+  fadeIn,
+  fadeOut,
+}) => {
+  const frame = useCurrentFrame();
+  const fadeInOpacity = fadeIn > 0 ? interpolate(frame, [0, fadeIn], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.ease) }) : 1;
+  const fadeOutOpacity = fadeOut > 0 ? interpolate(frame, [durationInFrames - fadeOut, durationInFrames], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: Easing.inOut(Easing.ease) }) : 1;
+  const opacity = Math.min(fadeInOpacity, fadeOutOpacity);
+
+  return (
+    <AbsoluteFill style={{ opacity }}>
+      <ClipCamera clip={clip}>
+        <OffthreadVideo
+          src={staticFile('raw.mp4')}
+          startFrom={Math.round(msToFrames(clip.start))}
+          playbackRate={clipSpeed(clip)}
+          muted
+          style={{ width: VIDEO_W, height: VIDEO_H, objectFit: 'cover' }}
+        />
+      </ClipCamera>
     </AbsoluteFill>
   );
 };

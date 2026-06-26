@@ -184,17 +184,89 @@ async function waitForSelectorRetry(page, selector, { timeout = 8000, retries = 
   return null;
 }
 
-/** Resolve a step's target element and return its center coordinates, or null. */
-async function centerOf(page, selector) {
-  try {
-    const el = await waitForSelectorRetry(page, selector);
-    if (!el) return { handle: null, x: null, y: null };
-    const box = await el.boundingBox();
-    if (!box) return { handle: el, x: null, y: null };
-    return { handle: el, x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
-  } catch (_e) {
-    return { handle: null, x: null, y: null };
+/**
+ * Injected into every page so a real mouse cursor is visible in the recording. The CDP
+ * screencast does NOT capture the OS cursor, so we draw our own: an arrow that follows the
+ * synthesized mouse moves, plus a soft ripple on each click. Lives on <html> so SPA re-renders
+ * of <body> don't remove it.
+ */
+function installCursor() {
+  var ID = '__demoCursor__';
+  function install() {
+    if (!document.documentElement || document.getElementById(ID)) return;
+    var c = document.createElement('div');
+    c.id = ID;
+    c.style.cssText =
+      'position:fixed;left:0;top:0;width:26px;height:26px;z-index:2147483647;pointer-events:none;' +
+      'transform:translate(-100px,-100px);transition:transform .05s linear;' +
+      'filter:drop-shadow(0 2px 3px rgba(0,0,0,.45));';
+    c.innerHTML =
+      '<svg width="26" height="26" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M5 3l14 7-5.5 1.6L10 19 5 3z" fill="#fff" stroke="#111" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+    document.documentElement.appendChild(c);
+    var move = function (x, y) { c.style.transform = 'translate(' + x + 'px,' + y + 'px)'; };
+    document.addEventListener('mousemove', function (e) { move(e.clientX, e.clientY); }, true);
+    document.addEventListener('mousedown', function (e) {
+      var r = document.createElement('div');
+      r.style.cssText =
+        'position:fixed;z-index:2147483646;pointer-events:none;border-radius:50%;' +
+        'left:' + (e.clientX - 7) + 'px;top:' + (e.clientY - 7) + 'px;width:14px;height:14px;' +
+        'background:rgba(56,132,255,.45);border:2px solid rgba(56,132,255,.95);' +
+        'transition:transform .45s ease-out,opacity .45s ease-out;';
+      document.documentElement.appendChild(r);
+      requestAnimationFrame(function () { r.style.transform = 'scale(3)'; r.style.opacity = '0'; });
+      setTimeout(function () { r.remove(); }, 480);
+    }, true);
   }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  install();
+  setTimeout(install, 400);
+}
+
+/**
+ * Bring an element into view, then glide the (visible) cursor to its centre and dwell briefly,
+ * so the hover reads clearly on camera. Returns the on-screen centre after scrolling.
+ */
+async function hoverTarget(page, handle) {
+  try {
+    await handle.evaluate((el) => el.scrollIntoView({ block: 'center', inline: 'center' }));
+  } catch (_e) {
+    /* ignore */
+  }
+  await sleep(250); // let the scroll settle before measuring
+  const box = await handle.boundingBox();
+  if (!box) return { x: null, y: null };
+  const x = Math.round(box.x + box.width / 2);
+  const y = Math.round(box.y + box.height / 2);
+  await page.mouse.move(x, y, { steps: 24 }); // smooth travel — the injected cursor follows
+  await sleep(420); // hover dwell so the element is clearly highlighted
+  return { x, y };
+}
+
+/**
+ * Animate a page scroll in-page with requestAnimationFrame so the screencast captures a smooth
+ * 60fps glide of exact `durationMs`. `linear: true` holds a constant velocity (consistent pace
+ * for a scroll-tour); otherwise easeInOutCubic gives a gentle accelerate/decelerate.
+ */
+async function smoothScroll(page, deltaY, durationMs, linear) {
+  await page.evaluate(
+    (dy, dur, lin) =>
+      new Promise((resolve) => {
+        const startY = window.scrollY;
+        const t0 = performance.now();
+        const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+        const frame = (now) => {
+          const t = Math.min(1, (now - t0) / dur);
+          window.scrollTo(0, startY + dy * (lin ? t : easeInOut(t)));
+          if (t < 1) requestAnimationFrame(frame);
+          else resolve();
+        };
+        requestAnimationFrame(frame);
+      }),
+    deltaY,
+    durationMs,
+    !!linear,
+  );
 }
 
 // ---- Screencast capture ---------------------------------------------------
@@ -272,6 +344,9 @@ function encodeFrames(frames, outPath) {
         '-safe', '0',
         '-i', listFile,
         '-vsync', 'vfr',
+        // Screencast frames can come back with an odd height (e.g. 1280x713); libx264 + yuv420p
+        // require even dimensions, so round both down to the nearest even number.
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
         '-pix_fmt', 'yuv420p',
         '-c:v', 'libx264',
         '-preset', 'veryfast',
@@ -296,6 +371,7 @@ async function runStep(page, step, t0Ref, moments, index, vars) {
   const text = applyVars(step.text, vars);
   let x = null;
   let y = null;
+  let recorded = false; // a step may push its own moment(s) (e.g. scroll waypoints)
 
   switch (type) {
     case 'navigate': {
@@ -303,30 +379,27 @@ async function runStep(page, step, t0Ref, moments, index, vars) {
       break;
     }
     case 'click': {
-      const { handle, x: cx, y: cy } = await centerOf(page, target);
+      const handle = await waitForSelectorRetry(page, target);
       if (!handle) throw new Error(`Selector not found for click: ${target}`);
-      x = cx;
-      y = cy;
+      ({ x, y } = await hoverTarget(page, handle)); // glide cursor over it and dwell
       await handle.click();
       break;
     }
     case 'type': {
-      const { handle, x: cx, y: cy } = await centerOf(page, target);
+      const handle = await waitForSelectorRetry(page, target);
       if (!handle) throw new Error(`Selector not found for type: ${target}`);
-      x = cx;
-      y = cy;
+      ({ x, y } = await hoverTarget(page, handle));
       await handle.click();
       await handle.type(String(text ?? ''), { delay: 60 }); // char-by-char, human-like
       break;
     }
     case 'capture': {
       // Read a value rendered at runtime (e.g. a generated access code) and stash it under
-      // step.as so a later step can reference it with {{as}}. We zoom to it like any action.
+      // step.as so a later step can reference it with {{as}}.
       if (!step.as) throw new Error('capture step requires an "as" field to name the value.');
-      const { handle, x: cx, y: cy } = await centerOf(page, target);
+      const handle = await waitForSelectorRetry(page, target);
       if (!handle) throw new Error(`Selector not found for capture: ${target}`);
-      x = cx;
-      y = cy;
+      ({ x, y } = await hoverTarget(page, handle));
       const value = String(
         await page.evaluate((el) => (el.value ?? el.textContent ?? '').trim(), handle),
       );
@@ -336,7 +409,23 @@ async function runStep(page, step, t0Ref, moments, index, vars) {
     }
     case 'scroll': {
       const dy = Number(step.deltaY ?? 600);
-      await page.evaluate((d) => window.scrollBy({ top: d, behavior: 'smooth' }), dy);
+      const dur = Number(step.ms ?? 1600); // scroll duration; `linear: true` keeps a constant pace
+      const startT = Date.now() - t0Ref.t;
+      await smoothScroll(page, dy, dur, step.linear);
+      const endT = Date.now() - t0Ref.t;
+      // Emit a moment every ~1.2s across the scroll. Without these, a long scroll looks to trim.js
+      // like a big gap between actions (dead air) and gets cut — these keep it as one clip.
+      const waypoints = Math.max(1, Math.ceil((endT - startT) / 1200));
+      for (let w = 1; w <= waypoints; w++) {
+        moments.push({
+          time: Math.round(startT + ((endT - startT) * w) / waypoints),
+          action: step.caption || step.why || 'scroll',
+          type: 'scroll',
+          x: null,
+          y: null,
+        });
+      }
+      recorded = true;
       break;
     }
     case 'wait': {
@@ -347,18 +436,22 @@ async function runStep(page, step, t0Ref, moments, index, vars) {
       throw new Error(`Unknown step type: ${type}`);
   }
 
-  const moment = {
-    time: Date.now() - t0Ref.t,
-    // `caption` is the authored, on-screen scene description; `why` is the debug note. Fall
-    // back through caption → why → target → type so a lower-third always has something to show.
-    action: step.caption || step.why || target || type,
-    type,
-    x,
-    y,
-  };
-  // Optional per-step playback speed (a "per-section" override the composition honors).
-  if (Number.isFinite(step.speed)) moment.speed = step.speed;
-  moments.push(moment);
+  // `silent` steps (e.g. the initial navigate + hydration wait) record no moment, so trim.js
+  // starts the clip at the first real action and the page-load/banner footage is cut off the front.
+  if (!recorded && !step.silent) {
+    const moment = {
+      time: Date.now() - t0Ref.t,
+      // `caption` is the authored, on-screen scene description; `why` is the debug note. Fall
+      // back through caption → why → target → type so a lower-third always has something to show.
+      action: step.caption || step.why || target || type,
+      type,
+      x,
+      y,
+    };
+    // Optional per-step playback speed (a "per-section" override the composition honors).
+    if (Number.isFinite(step.speed)) moment.speed = step.speed;
+    moments.push(moment);
+  }
   console.log(`  ✓ step ${index + 1} (${type})${x != null ? ` @ ${x},${y}` : ''}`);
 }
 
@@ -447,6 +540,15 @@ async function main() {
     }
 
     await page.setViewport(viewport);
+
+    // Draw a visible cursor in the recording: install on every future navigation, and on the
+    // current page too (in case we're already on a URL, e.g. connect mode).
+    await page.evaluateOnNewDocument(installCursor);
+    try {
+      await page.evaluate(installCursor);
+    } catch (_e) {
+      /* about:blank or not ready yet — evaluateOnNewDocument covers the real pages */
+    }
 
     console.log('• Starting screencast…');
     screencast = await startScreencast(page, viewport, t0Ref);
