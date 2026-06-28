@@ -21,11 +21,25 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const MOMENTS_IN = path.join(ROOT, 'scripts', 'moments.json');
 const CLIPS_OUT = path.join(ROOT, 'scripts', 'clips.json');
+const BROWSE_PLAN = path.join(ROOT, 'scripts', 'browse-plan.json');
 
-const LEAD_MS = 500; // clip starts this long before the action (rule 1)
-const TAIL_MS = 1000; // clip ends this long after the action (rule 2)
+function readJson(file, fallback) {
+  if (!fs.existsSync(file)) return fallback;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (_e) {
+    return fallback;
+  }
+}
+
+const plan = readJson(BROWSE_PLAN, {});
+const meta = (plan && plan.meta) || {};
+
+const LEAD_MS = Number.isFinite(meta.trimLeadMs) ? meta.trimLeadMs : 500; // clip starts this long before the action (rule 1)
+const TAIL_MS = Number.isFinite(meta.trimTailMs) ? meta.trimTailMs : 1000; // clip ends this long after the action (rule 2)
 const MERGE_MAX_GAP_MS = 2000; // merge clips closer than this (rule 3)
 const DEAD_AIR_GAP_MS = 3000; // never bridge action gaps larger than this (rule 4)
+const PRESERVE_START = meta.preserveStart === true;
 
 function main() {
   if (!fs.existsSync(MOMENTS_IN)) {
@@ -57,6 +71,7 @@ function main() {
   // Rules 3 + 4: walk the clips and decide, for each adjacent pair, whether to merge.
   const clips = [];
   let current = { ...raw[0] };
+  if (PRESERVE_START) current.start = 0;
 
   for (let i = 1; i < raw.length; i++) {
     const next = raw[i];

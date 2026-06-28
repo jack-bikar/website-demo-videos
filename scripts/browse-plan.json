@@ -1,31 +1,72 @@
 {
   "url": "https://astaxis.vercel.app/",
-  "viewport": { "width": 1280, "height": 800 },
+  "viewport": { "width": 1920, "height": 1080 },
+  "hideText": [
+    "Concept demo by Jack Bikar — not an official site.",
+    "Concept demo by Jack Bikar - not an official site."
+  ],
 
   "recording": {
     "mode": "local",
     "connectUrl": "http://127.0.0.1:9222",
     "headful": false,
     "userDataDir": null,
-    "chromePath": null
+    "chromePath": null,
+    "stepPauseMs": 0
   },
 
   "meta": {
     "playbackSpeed": 1,
     "captions": false,
-    "zoom": false
+    "zoom": false,
+    "preserveStart": false,
+    "trimTailMs": 1500,
+    "loadingOverlay": true,
+    "loadingOverlaySeconds": 2.7,
+    "topCropPx": 0
   },
 
   "steps": [
-    { "type": "navigate", "target": "https://astaxis.vercel.app/", "text": null, "deltaY": null, "ms": null, "speed": null, "as": null, "linear": false, "silent": true, "caption": null, "why": "Open the homepage (silent: load footage is trimmed off the front)" },
-    { "type": "wait", "target": null, "text": null, "deltaY": null, "ms": 1300, "speed": null, "as": null, "linear": false, "silent": true, "caption": null, "why": "Let React hydrate so the scroll position sticks" },
-    { "type": "scroll", "target": null, "text": null, "deltaY": 80, "ms": 140, "speed": null, "as": null, "linear": true, "caption": null, "why": "Nudge past the 36px demo banner — the opening frame, banner gone" },
-    { "type": "wait", "target": null, "text": null, "deltaY": null, "ms": 600, "speed": null, "as": null, "linear": false, "caption": null, "why": "Hold on the hero as the starting frame" },
-    { "type": "scroll", "target": null, "text": null, "deltaY": 3600, "ms": 6300, "speed": null, "as": null, "linear": true, "caption": null, "why": "Glide continuously down the whole homepage at a constant pace, letting each section animate in" },
-    { "type": "wait", "target": null, "text": null, "deltaY": null, "ms": 700, "speed": null, "as": null, "linear": false, "caption": null, "why": "Brief hold at the testimonials/footer" },
-    { "type": "navigate", "target": "https://astaxis.vercel.app/book", "text": null, "deltaY": null, "ms": null, "speed": null, "as": null, "linear": false, "caption": null, "why": "Go to the booking form" },
-    { "type": "wait", "target": null, "text": null, "deltaY": null, "ms": 1500, "speed": null, "as": null, "linear": false, "caption": null, "why": "Briefly show the booking form" },
-    { "type": "scroll", "target": null, "text": null, "deltaY": 480, "ms": 840, "speed": null, "as": null, "linear": true, "caption": null, "why": "Gently pan down the form at the same pace to show the fields — no need to fill it in" },
-    { "type": "wait", "target": null, "text": null, "deltaY": null, "ms": 1600, "speed": null, "as": null, "linear": false, "caption": null, "why": "Hold on the form to finish" }
+    {
+      "type": "navigate",
+      "target": "https://astaxis.vercel.app/",
+      "waitUntil": "networkidle2",
+      "silent": true,
+      "why": "Load the homepage"
+    },
+    {
+      "type": "wait",
+      "ms": 300,
+      "why": "Hold on the hero"
+    },
+    {
+      "type": "scroll",
+      "deltaY": 5400,
+      "ms": 7700,
+      "linear": true,
+      "why": "One continuous scroll through the entire site at a steady pace"
+    },
+    {
+      "type": "click",
+      "target": "header a[href=\"/book\"]",
+      "why": "Click the red Book Now button in the header"
+    },
+    {
+      "type": "wait",
+      "ms": 1200,
+      "why": "Booking page loads"
+    },
+    {
+      "type": "scroll",
+      "deltaY": 620,
+      "ms": 1000,
+      "linear": true,
+      "why": "Scroll down the booking form"
+    },
+    {
+      "type": "wait",
+      "ms": 800,
+      "why": "Hold the booking form"
+    }
   ]
 }

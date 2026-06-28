@@ -72,12 +72,15 @@ function resolveRecordingConfig(plan) {
   if (mode === 'connect' && !connectUrl) {
     throw new Error('recording.mode is "connect" but no connectUrl/DEMO_CONNECT_URL was provided.');
   }
+  const stepPauseRaw = env.DEMO_STEP_PAUSE_MS !== undefined ? env.DEMO_STEP_PAUSE_MS : r.stepPauseMs;
+  const parsedStepPause = stepPauseRaw === undefined || stepPauseRaw === null ? null : Number(stepPauseRaw);
   return {
     mode,
     connectUrl,
     headful: env.DEMO_HEADFUL !== undefined ? truthy(env.DEMO_HEADFUL) : !!r.headful,
     userDataDir: env.DEMO_USER_DATA_DIR || r.userDataDir || undefined,
     chromePath: env.CHROME_PATH || r.chromePath || undefined,
+    stepPauseMs: Number.isFinite(parsedStepPause) ? Math.max(0, parsedStepPause) : null,
   };
 }
 
@@ -197,30 +200,77 @@ function installCursor() {
     var c = document.createElement('div');
     c.id = ID;
     c.style.cssText =
-      'position:fixed;left:0;top:0;width:26px;height:26px;z-index:2147483647;pointer-events:none;' +
-      'transform:translate(-100px,-100px);transition:transform .05s linear;' +
-      'filter:drop-shadow(0 2px 3px rgba(0,0,0,.45));';
+      'position:fixed;left:0;top:0;width:44px;height:44px;z-index:2147483647;pointer-events:none;' +
+      'transform:translate(-100px,-100px);transition:transform .07s linear;' +
+      'filter:drop-shadow(0 3px 6px rgba(0,0,0,.55));';
     c.innerHTML =
-      '<svg width="26" height="26" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
-      '<path d="M5 3l14 7-5.5 1.6L10 19 5 3z" fill="#fff" stroke="#111" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+      '<svg width="44" height="44" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+      '<path d="M5 3l14 7-5.5 1.6L10 19 5 3z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="round"/></svg>';
     document.documentElement.appendChild(c);
     var move = function (x, y) { c.style.transform = 'translate(' + x + 'px,' + y + 'px)'; };
     document.addEventListener('mousemove', function (e) { move(e.clientX, e.clientY); }, true);
     document.addEventListener('mousedown', function (e) {
+      c.style.transition = 'transform .08s ease-in';
+      c.style.filter = 'drop-shadow(0 3px 6px rgba(0,0,0,.55)) brightness(0.85)';
+      setTimeout(function () {
+        c.style.transition = 'transform .07s linear';
+        c.style.filter = 'drop-shadow(0 3px 6px rgba(0,0,0,.55))';
+      }, 160);
       var r = document.createElement('div');
       r.style.cssText =
         'position:fixed;z-index:2147483646;pointer-events:none;border-radius:50%;' +
-        'left:' + (e.clientX - 7) + 'px;top:' + (e.clientY - 7) + 'px;width:14px;height:14px;' +
-        'background:rgba(56,132,255,.45);border:2px solid rgba(56,132,255,.95);' +
-        'transition:transform .45s ease-out,opacity .45s ease-out;';
+        'left:' + (e.clientX - 16) + 'px;top:' + (e.clientY - 16) + 'px;width:32px;height:32px;' +
+        'background:rgba(56,132,255,.5);border:3px solid rgba(56,132,255,1);' +
+        'box-shadow:0 0 18px rgba(56,132,255,.6);' +
+        'transition:transform .5s ease-out,opacity .5s ease-out;';
       document.documentElement.appendChild(r);
-      requestAnimationFrame(function () { r.style.transform = 'scale(3)'; r.style.opacity = '0'; });
-      setTimeout(function () { r.remove(); }, 480);
+      requestAnimationFrame(function () { r.style.transform = 'scale(3.5)'; r.style.opacity = '0'; });
+      setTimeout(function () { r.remove(); }, 550);
     }, true);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
   install();
   setTimeout(install, 400);
+}
+
+/**
+ * Removes known non-demo page furniture (for example a staging disclaimer) before it appears
+ * in the screencast. Text matching is exact after whitespace normalization.
+ */
+function installTextHider(hiddenText) {
+  var needles = Array.isArray(hiddenText)
+    ? hiddenText
+        .map(function (t) {
+          return String(t || '').replace(/\s+/g, ' ').trim();
+        })
+        .filter(Boolean)
+    : [];
+  if (!needles.length || window.__demoTextHiderInstalled) return;
+  window.__demoTextHiderInstalled = true;
+
+  function normalize(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function removeMatches() {
+    if (!document.body) return;
+    var all = Array.prototype.slice.call(document.body.querySelectorAll('*'));
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (!el || !el.parentElement || el === document.body || el === document.documentElement) continue;
+      if (needles.indexOf(normalize(el.textContent)) !== -1) {
+        el.remove();
+      }
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', removeMatches);
+  removeMatches();
+  new MutationObserver(removeMatches).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
 }
 
 /**
@@ -238,8 +288,8 @@ async function hoverTarget(page, handle) {
   if (!box) return { x: null, y: null };
   const x = Math.round(box.x + box.width / 2);
   const y = Math.round(box.y + box.height / 2);
-  await page.mouse.move(x, y, { steps: 24 }); // smooth travel — the injected cursor follows
-  await sleep(420); // hover dwell so the element is clearly highlighted
+  await page.mouse.move(x, y, { steps: 60 }); // natural glide to the target
+  await sleep(500); // hover dwell
   return { x, y };
 }
 
@@ -375,7 +425,7 @@ async function runStep(page, step, t0Ref, moments, index, vars) {
 
   switch (type) {
     case 'navigate': {
-      await page.goto(target, { waitUntil: 'networkidle2', timeout: 45000 });
+      await page.goto(target, { waitUntil: step.waitUntil || 'networkidle2', timeout: 45000 });
       break;
     }
     case 'click': {
@@ -541,10 +591,13 @@ async function main() {
 
     await page.setViewport(viewport);
 
-    // Draw a visible cursor in the recording: install on every future navigation, and on the
-    // current page too (in case we're already on a URL, e.g. connect mode).
+    // Draw a visible cursor and apply capture-only page cleanup on every future navigation, and
+    // on the current page too (in case we're already on a URL, e.g. connect mode).
+    const hiddenText = Array.isArray(plan.hideText) ? plan.hideText : [];
+    await page.evaluateOnNewDocument(installTextHider, hiddenText);
     await page.evaluateOnNewDocument(installCursor);
     try {
+      await page.evaluate(installTextHider, hiddenText);
       await page.evaluate(installCursor);
     } catch (_e) {
       /* about:blank or not ready yet — evaluateOnNewDocument covers the real pages */
@@ -566,7 +619,8 @@ async function main() {
           /* ignore screenshot failures */
         }
       }
-      await humanPause();
+      if (rec.stepPauseMs !== null) await sleep(rec.stepPauseMs);
+      else await humanPause();
     }
 
     // Let the final state settle on screen before we cut.
@@ -596,7 +650,7 @@ async function main() {
   const frames = screencast ? screencast.frames : [];
   console.log(`• Captured ${frames.length} frames; encoding to ${path.relative(ROOT, RAW_MP4)}…`);
   encodeFrames(frames, RAW_MP4);
-  fs.copyFileSync(RAW_MP4, PUBLIC_MP4); // Remotion loads this via staticFile('raw.mp4')
+  fs.copyFileSync(RAW_MP4, PUBLIC_MP4);
 
   fs.writeFileSync(MOMENTS_OUT, JSON.stringify(moments, null, 2));
   const durationMs = moments.length ? moments[moments.length - 1].time : frames.length ? frames[frames.length - 1].t : 0;
