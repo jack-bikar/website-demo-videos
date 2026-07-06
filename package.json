@@ -5,13 +5,16 @@
     "record": "node scripts/record.js",
     "record:local": "DEMO_LOCAL=1 node scripts/record.js",
     "record:connect": "DEMO_CONNECT_URL=${DEMO_CONNECT_URL:-http://127.0.0.1:9222} node scripts/record.js",
-    "demo:local": "DEMO_LOCAL=1 node scripts/record.js && npm run trim && npm run keyframes && npm run render",
+    "demo:local": "node scripts/demo.js --local",
     "smooth": "node scripts/smooth.js",
     "trim": "node scripts/trim.js",
     "keyframes": "node scripts/keyframes.js",
-    "render": "remotion render remotion/index.ts DemoVideo output/demo.mp4",
+    "render": "node scripts/render.js",
+    "render:full": "DEMO_RENDER_MODE=full node scripts/render.js",
+    "render:fast": "DEMO_RENDER_MODE=fast node scripts/render.js",
+    "preview": "node scripts/preview-server.js",
     "studio": "remotion studio remotion/index.ts",
-    "demo": "npm run record && npm run trim && npm run keyframes && npm run render"
+    "demo": "node scripts/demo.js"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.469",

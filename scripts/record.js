@@ -43,6 +43,10 @@ const RAW_MP4 = path.join(RECORDINGS_DIR, 'raw.mp4');
 const PUBLIC_MP4 = path.join(PUBLIC_DIR, 'raw.mp4');
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 800 };
+// High JPEG quality at 1080p can starve CDP screencast delivery during long scrolls, producing
+// uneven frame gaps that read as lag. 82 keeps UI text crisp while giving Chrome more room to
+// return frames consistently.
+const DEFAULT_SCREENCAST_QUALITY = 82;
 
 // Chrome DevTools Protocol calls (e.g. Runtime.callFunctionOn) default to a ~30s timeout,
 // which a busy authenticated SPA can blow past. Bump it generously for every connection.
@@ -74,6 +78,8 @@ function resolveRecordingConfig(plan) {
   }
   const stepPauseRaw = env.DEMO_STEP_PAUSE_MS !== undefined ? env.DEMO_STEP_PAUSE_MS : r.stepPauseMs;
   const parsedStepPause = stepPauseRaw === undefined || stepPauseRaw === null ? null : Number(stepPauseRaw);
+  const qualityRaw = env.DEMO_SCREENCAST_QUALITY !== undefined ? env.DEMO_SCREENCAST_QUALITY : r.screencastQuality;
+  const parsedQuality = qualityRaw === undefined || qualityRaw === null ? null : Number(qualityRaw);
   return {
     mode,
     connectUrl,
@@ -81,6 +87,9 @@ function resolveRecordingConfig(plan) {
     userDataDir: env.DEMO_USER_DATA_DIR || r.userDataDir || undefined,
     chromePath: env.CHROME_PATH || r.chromePath || undefined,
     stepPauseMs: Number.isFinite(parsedStepPause) ? Math.max(0, parsedStepPause) : null,
+    screencastQuality: Number.isFinite(parsedQuality)
+      ? Math.max(1, Math.min(100, Math.round(parsedQuality)))
+      : DEFAULT_SCREENCAST_QUALITY,
   };
 }
 
@@ -88,6 +97,210 @@ function resolveRecordingConfig(plan) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const humanPause = () => sleep(300 + Math.floor(Math.random() * 500)); // 300–800ms
 const ensureDir = (d) => fs.mkdirSync(d, { recursive: true });
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+// Where the visible cursor currently sits, tracked in Node so a glide always starts from the
+// cursor's real position (never a teleport from 0,0).
+const mouse = { x: null, y: null };
+
+async function syncVisibleCursor(page, x, y, instant = false) {
+  try {
+    await page.evaluate(
+      (px, py, jump) => {
+        const ID = '__demoCursor__';
+        let c = document.getElementById(ID);
+        if (!c) {
+          c = document.createElement('div');
+          c.id = ID;
+          c.style.cssText =
+            'position:fixed;left:-100px;top:-100px;width:44px;height:44px;z-index:2147483647;pointer-events:none;' +
+            'transition:left .07s linear,top .07s linear;filter:drop-shadow(0 3px 6px rgba(0,0,0,.55));';
+          c.innerHTML =
+            '<svg width="44" height="44" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+            '<path d="M5 3l14 7-5.5 1.6L10 19 5 3z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+          document.documentElement.appendChild(c);
+        }
+        const move = function (mx, my) {
+          c.style.left = mx + 'px';
+          c.style.top = my + 'px';
+        };
+        window.__demoCursor = window.__demoCursor || {};
+        window.__demoCursor.move = move;
+        window.__demoCursor.place = function (mx, my) {
+          const prev = c.style.transition;
+          c.style.transition = 'none';
+          move(mx, my);
+          void c.offsetWidth;
+          c.style.transition = prev || 'left .07s linear,top .07s linear';
+        };
+        if (jump) window.__demoCursor.place(px, py);
+        else move(px, py);
+      },
+      x,
+      y,
+      instant,
+    );
+  } catch (_e) {
+    /* cursor not injectable on this document — ignore */
+  }
+}
+
+/**
+ * Move the mouse from its current position to (toX,toY) over a REAL duration, emitting many
+ * small steps with sleeps between them so the screencast captures a smooth, human-paced glide.
+ * (puppeteer's built-in `steps` option fires every step with no delay, which snaps instantly on
+ * camera.) easeInOutQuad accelerates out of the start and eases into the target like a real hand.
+ */
+async function glideMouse(page, toX, toY, durationMs = 1000) {
+  const fromX = mouse.x == null ? toX : mouse.x;
+  const fromY = mouse.y == null ? toY : mouse.y;
+  const dist = Math.hypot(toX - fromX, toY - fromY);
+  const steps = Math.max(24, Math.min(90, Math.round(dist / 8)));
+  const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const perStep = durationMs / steps;
+  for (let i = 1; i <= steps; i++) {
+    const t = ease(i / steps);
+    const x = Math.round(fromX + (toX - fromX) * t);
+    const y = Math.round(fromY + (toY - fromY) * t);
+    await page.mouse.move(x, y);
+    await syncVisibleCursor(page, x, y);
+    await sleep(perStep);
+  }
+  mouse.x = toX;
+  mouse.y = toY;
+}
+
+/** Instantly place the (visible) cursor without any visible glide, and record its position. Used
+ *  to seat the cursor at a natural resting spot at the start and after each navigation. */
+async function cursorPlace(page, x, y) {
+  await syncVisibleCursor(page, x, y, true);
+  await page.mouse.move(x, y); // keep puppeteer's internal pointer in sync
+  mouse.x = x;
+  mouse.y = y;
+}
+
+/**
+ * During scroll tours, keep the cursor out of the reading path. Downward scrolls progressively
+ * bias the cursor rightward; upward scrolls relax it slightly left so it still feels hand-driven.
+ */
+async function cursorRestForScroll(page, deltaY, durationMs = 500) {
+  const vp = page.viewport() || DEFAULT_VIEWPORT;
+  const marginX = Math.round(vp.width * 0.07);
+  const direction = deltaY >= 0 ? 1 : -1;
+  const targetX =
+    mouse.x == null
+      ? Math.round(vp.width * 0.68)
+      : Math.round(mouse.x + direction * (deltaY >= 0 ? vp.width * 0.08 : vp.width * 0.04));
+  const x = clamp(targetX, Math.round(vp.width * 0.58), vp.width - marginX);
+  const targetY = deltaY >= 0 ? Math.round(vp.height * 0.64) : Math.round(vp.height * 0.36);
+  const y = clamp(
+    mouse.y == null ? targetY : Math.round(mouse.y * 0.65 + targetY * 0.35),
+    Math.round(vp.height * 0.18),
+    Math.round(vp.height * 0.82),
+  );
+
+  await glideMouse(page, x, y, clamp(Math.round(durationMs * 0.18), 340, 720));
+  return { x, y };
+}
+
+/**
+ * Find a visible form/card/dialog-like region and return a natural cursor rest point near one of
+ * its right corners. This is intentionally heuristic so plans stay portable across unrelated sites.
+ */
+async function findContextRestSpot(page) {
+  const vp = page.viewport() || DEFAULT_VIEWPORT;
+  return page.evaluate(
+    ({ vw, vh, currentX, currentY }) => {
+      const visibleRect = (el) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 180 || rect.height < 90) return null;
+        const left = Math.max(0, rect.left);
+        const top = Math.max(0, rect.top);
+        const right = Math.min(vw, rect.right);
+        const bottom = Math.min(vh, rect.bottom);
+        const width = right - left;
+        const height = bottom - top;
+        if (width < 160 || height < 80) return null;
+        return { left, top, right, bottom, width, height, area: width * height, raw: rect };
+      };
+
+      const isVisible = (el) => {
+        const style = window.getComputedStyle(el);
+        return style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity || 1) > 0.05;
+      };
+
+      const textFor = (el) =>
+        `${el.tagName || ''} ${el.id || ''} ${el.className || ''} ${el.getAttribute('role') || ''} ${
+          el.getAttribute('aria-label') || ''
+        }`.toLowerCase();
+
+      const candidates = Array.from(
+        document.querySelectorAll('form,[role="form"],[role="dialog"],fieldset,section,article,main,aside,div'),
+      );
+      let best = null;
+
+      for (const el of candidates) {
+        if (!isVisible(el)) continue;
+        const rect = visibleRect(el);
+        if (!rect) continue;
+
+        const label = textFor(el);
+        const inputCount = el.querySelectorAll('input:not([type="hidden"]),textarea,select').length;
+        const buttonCount = el.querySelectorAll('button,a[href],[role="button"]').length;
+        const isFormTag = el.tagName && el.tagName.toLowerCase() === 'form';
+        const isDialog = label.includes('dialog') || label.includes('modal');
+        const nameMatch = /(form|booking|reservation|checkout|payment|contact|signup|sign-up|login|request|details|journey|trip|settings|profile|account)/.test(
+          label,
+        );
+        const focusLike = inputCount > 0 || isFormTag || isDialog || nameMatch;
+        if (!focusLike) continue;
+
+        const tooMuchPage = rect.width > vw * 0.92 && rect.height > vh * 0.82;
+        const fieldScore = inputCount * 130 + buttonCount * 24;
+        const semanticScore = (isFormTag ? 240 : 0) + (isDialog ? 170 : 0) + (nameMatch ? 120 : 0);
+        const sizeScore = Math.min(220, rect.area / 5000) - (tooMuchPage ? 180 : 0);
+        const centerY = rect.top + rect.height / 2;
+        const centerBias = 90 - Math.min(90, Math.abs(centerY - vh / 2) / 4);
+        const score = fieldScore + semanticScore + sizeScore + centerBias;
+
+        if (score < 210) continue;
+        if (!best || score > best.score) best = { el, rect, score, inputCount, label };
+      }
+
+      if (!best) return null;
+
+      const r = best.rect;
+      const insetX = Math.max(34, Math.min(76, r.width * 0.08));
+      const topY = r.top + Math.max(34, Math.min(78, r.height * 0.14));
+      const bottomY = r.bottom - Math.max(34, Math.min(78, r.height * 0.14));
+      const current = Number.isFinite(currentY) ? currentY : vh * 0.55;
+      const y = Math.abs(topY - current) <= Math.abs(bottomY - current) ? topY : bottomY;
+
+      return {
+        x: Math.round(Math.min(vw - 52, Math.max(28, r.right - insetX))),
+        y: Math.round(Math.min(vh - 52, Math.max(28, y))),
+        label: best.label.slice(0, 80),
+        score: Math.round(best.score),
+      };
+    },
+    { vw: vp.width, vh: vp.height, currentX: mouse.x, currentY: mouse.y },
+  );
+}
+
+async function cursorRestForContext(page, durationMs = 700) {
+  let spot = null;
+  try {
+    spot = await findContextRestSpot(page);
+  } catch (_e) {
+    return { x: mouse.x, y: mouse.y };
+  }
+  if (!spot) return { x: mouse.x, y: mouse.y };
+  const dist = mouse.x == null || mouse.y == null ? Infinity : Math.hypot(spot.x - mouse.x, spot.y - mouse.y);
+  if (dist > 18) {
+    await glideMouse(page, spot.x, spot.y, durationMs);
+  }
+  return { x: spot.x, y: spot.y };
+}
 
 /**
  * Substitute {{name}} placeholders with values captured earlier in the run (see the
@@ -199,23 +412,24 @@ function installCursor() {
     if (!document.documentElement || document.getElementById(ID)) return;
     var c = document.createElement('div');
     c.id = ID;
+    // Visible from the start; Node seats it at a natural resting spot (off the corner) before the
+    // recording begins, then it follows the synthesized mouse moves.
     c.style.cssText =
-      'position:fixed;left:0;top:0;width:44px;height:44px;z-index:2147483647;pointer-events:none;' +
-      'transform:translate(-100px,-100px);transition:transform .07s linear;' +
+      'position:fixed;left:-100px;top:-100px;width:44px;height:44px;z-index:2147483647;pointer-events:none;' +
+      'transition:left .07s linear,top .07s linear;' +
       'filter:drop-shadow(0 3px 6px rgba(0,0,0,.55));';
     c.innerHTML =
       '<svg width="44" height="44" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
       '<path d="M5 3l14 7-5.5 1.6L10 19 5 3z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="round"/></svg>';
     document.documentElement.appendChild(c);
-    var move = function (x, y) { c.style.transform = 'translate(' + x + 'px,' + y + 'px)'; };
+    var move = function (x, y) {
+      c.style.left = x + 'px';
+      c.style.top = y + 'px';
+    };
     document.addEventListener('mousemove', function (e) { move(e.clientX, e.clientY); }, true);
     document.addEventListener('mousedown', function (e) {
-      c.style.transition = 'transform .08s ease-in';
       c.style.filter = 'drop-shadow(0 3px 6px rgba(0,0,0,.55)) brightness(0.85)';
-      setTimeout(function () {
-        c.style.transition = 'transform .07s linear';
-        c.style.filter = 'drop-shadow(0 3px 6px rgba(0,0,0,.55))';
-      }, 160);
+      setTimeout(function () { c.style.filter = 'drop-shadow(0 3px 6px rgba(0,0,0,.55))'; }, 160);
       var r = document.createElement('div');
       r.style.cssText =
         'position:fixed;z-index:2147483646;pointer-events:none;border-radius:50%;' +
@@ -227,6 +441,18 @@ function installCursor() {
       requestAnimationFrame(function () { r.style.transform = 'scale(3.5)'; r.style.opacity = '0'; });
       setTimeout(function () { r.remove(); }, 550);
     }, true);
+
+    // Node hook to seat the cursor at a position with no visible streak (used at start / after nav).
+    window.__demoCursor = {
+      move: move,
+      place: function (x, y) {
+        var prev = c.style.transition;
+        c.style.transition = 'none'; // jump with no visible streak
+        move(x, y);
+        void c.offsetWidth; // force reflow so 'none' applies before we restore the transition
+        c.style.transition = prev;
+      },
+    };
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
   install();
@@ -278,19 +504,178 @@ function installTextHider(hiddenText) {
  * so the hover reads clearly on camera. Returns the on-screen centre after scrolling.
  */
 async function hoverTarget(page, handle) {
-  try {
-    await handle.evaluate((el) => el.scrollIntoView({ block: 'center', inline: 'center' }));
-  } catch (_e) {
-    /* ignore */
+  const vp = page.viewport() || DEFAULT_VIEWPORT;
+
+  // Only scroll when the element isn't already comfortably in view. This is what kills the
+  // "teleport to another section" glitch: a sticky-header button (or anything already on screen)
+  // needs no scroll, so the page stays exactly where the previous scroll left it.
+  let box = await handle.boundingBox();
+  const inView = box && box.y >= 0 && box.y + box.height <= vp.height;
+  if (!inView) {
+    await smoothScrollToElement(page, handle); // gentle glide, never an instant jump
+    await sleep(200);
+    box = await handle.boundingBox();
   }
-  await sleep(250); // let the scroll settle before measuring
-  const box = await handle.boundingBox();
   if (!box) return { x: null, y: null };
+
   const x = Math.round(box.x + box.width / 2);
   const y = Math.round(box.y + box.height / 2);
-  await page.mouse.move(x, y, { steps: 60 }); // natural glide to the target
-  await sleep(500); // hover dwell
+
+  await glideMouse(page, x, y, 650); // human-paced drag from the cursor's rest spot to the target
+  await sleep(180); // hover dwell so the element clearly highlights
   return { x, y };
+}
+
+/**
+ * Gently scroll an off-screen element to the vertical centre of the viewport, reusing the smooth
+ * in-page scroll so the motion is captured as a glide rather than a hard jump.
+ */
+async function smoothScrollToElement(page, handle, durationMs = 700) {
+  const vp = page.viewport() || DEFAULT_VIEWPORT;
+  const box = await handle.boundingBox();
+  if (!box) return;
+  const dy = Math.round(box.y + box.height / 2 - vp.height / 2);
+  if (Math.abs(dy) < 8) return;
+  await smoothScroll(page, dy, durationMs, false);
+}
+
+async function fitTargetForShot(page, handle, durationMs = 850) {
+  const vp = page.viewport() || DEFAULT_VIEWPORT;
+  let box = await handle.boundingBox();
+  if (!box) return { x: null, y: null };
+
+  const topBand = Math.round(vp.height * 0.16);
+  const bottomBand = Math.round(vp.height * 0.88);
+  const desiredCenter = (topBand + bottomBand) / 2;
+  let dy = 0;
+
+  if (box.height >= vp.height * 0.68) {
+    dy = Math.round(box.y - topBand);
+  } else if (box.y < topBand || box.y + box.height > bottomBand) {
+    dy = Math.round(box.y + box.height / 2 - desiredCenter);
+  }
+
+  if (Math.abs(dy) > 8) {
+    await smoothScroll(page, dy, durationMs, false);
+    await sleep(180);
+    box = await handle.boundingBox();
+  }
+  if (!box) return { x: null, y: null };
+
+  const insetX = Math.max(34, Math.min(76, box.width * 0.08));
+  const insetY = Math.max(34, Math.min(78, box.height * 0.14));
+  const topY = box.y + insetY;
+  const bottomY = box.y + box.height - insetY;
+  const currentY = mouse.y == null ? topY : mouse.y;
+  const y = Math.abs(topY - currentY) <= Math.abs(bottomY - currentY) ? topY : bottomY;
+  const x = box.x + box.width - insetX;
+
+  const target = {
+    x: Math.round(clamp(x, 28, vp.width - 52)),
+    y: Math.round(clamp(y, 28, vp.height - 52)),
+  };
+  await glideMouse(page, target.x, target.y, 750);
+  return target;
+}
+
+/**
+ * Keep generic page-tour scrolls out of footers. Plans can still request "scroll down a lot";
+ * the recorder clamps that to the last meaningful content section before footer/contentinfo.
+ */
+async function clampTourScrollDelta(page, requestedDeltaY, allowFooter = false) {
+  if (allowFooter || requestedDeltaY <= 0) return requestedDeltaY;
+
+  const result = await page.evaluate((requested) => {
+    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    const viewportH = window.innerHeight || document.documentElement.clientHeight || 800;
+    const doc = document.documentElement;
+    const body = document.body;
+    const scrollHeight = Math.max(
+      doc ? doc.scrollHeight : 0,
+      body ? body.scrollHeight : 0,
+      doc ? doc.offsetHeight : 0,
+      body ? body.offsetHeight : 0,
+    );
+
+    const isVisible = (el) => {
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+      return (
+        rect.width > 80 &&
+        rect.height > 40 &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        Number(style.opacity || 1) > 0.05
+      );
+    };
+
+    const signature = (el) =>
+      `${el.tagName || ''} ${el.id || ''} ${el.className || ''} ${el.getAttribute('role') || ''} ${
+        el.getAttribute('aria-label') || ''
+      }`.toLowerCase();
+
+    const documentTop = (el) => el.getBoundingClientRect().top + scrollY;
+
+    let footerTop = Infinity;
+    for (const el of Array.from(document.querySelectorAll('footer,[role="contentinfo"],body *'))) {
+      if (!isVisible(el)) continue;
+      const sig = signature(el);
+      const isFooter =
+        el.tagName.toLowerCase() === 'footer' ||
+        el.getAttribute('role') === 'contentinfo' ||
+        /\b(footer|site-footer|page-footer|copyright)\b/.test(sig);
+      if (!isFooter) continue;
+      const top = documentTop(el);
+      if (top > viewportH * 0.35 && top < footerTop) footerTop = top;
+    }
+
+    const hasFooter = Number.isFinite(footerTop);
+    const footerBoundary = hasFooter ? footerTop : scrollHeight;
+    let lastSectionBottom = 0;
+    const sectionSelectors = [
+      'main > section',
+      'main > article',
+      'body > section',
+      'section',
+      'article',
+      '[data-section]',
+      '[data-testid*="section" i]',
+      '[class*="section" i]',
+      '[id*="section" i]',
+    ].join(',');
+
+    for (const el of Array.from(document.querySelectorAll(sectionSelectors))) {
+      if (!isVisible(el)) continue;
+      const rect = el.getBoundingClientRect();
+      const top = rect.top + scrollY;
+      const bottom = rect.bottom + scrollY;
+      if (bottom <= top || top >= footerBoundary - 12) continue;
+      if (rect.height < Math.min(140, viewportH * 0.18)) continue;
+      if (rect.width < Math.min(360, window.innerWidth * 0.35)) continue;
+      lastSectionBottom = Math.max(lastSectionBottom, Math.min(bottom, footerBoundary));
+    }
+
+    const contentBottom = lastSectionBottom > 0 ? Math.min(footerBoundary, lastSectionBottom) : footerBoundary;
+    const normalMaxY = Math.max(0, scrollHeight - viewportH);
+    const tourMaxY = Math.max(0, Math.min(normalMaxY, Math.round(contentBottom - viewportH)));
+    const requestedY = Math.min(normalMaxY, scrollY + requested);
+    const targetY = Math.min(requestedY, tourMaxY);
+
+    return {
+      deltaY: Math.round(Math.max(0, targetY - scrollY)),
+      clamped: targetY < requestedY - 2,
+      requestedY: Math.round(requestedY),
+      targetY: Math.round(targetY),
+      footerBoundary: hasFooter ? Math.round(footerBoundary) : null,
+    };
+  }, requestedDeltaY);
+
+  if (result && result.clamped) {
+    console.log(
+      `  ↳ scroll clamped before footer (${Math.round(requestedDeltaY)}px requested, ${result.deltaY}px used)`,
+    );
+  }
+  return result && Number.isFinite(result.deltaY) ? result.deltaY : requestedDeltaY;
 }
 
 /**
@@ -324,9 +709,12 @@ async function smoothScroll(page, deltaY, durationMs, linear) {
  * Starts a CDP screencast and collects frames in memory with their arrival offset (ms).
  * Returns { stop } — call stop() to end the screencast and return the captured frames.
  */
-async function startScreencast(page, viewport, t0Ref) {
+async function startScreencast(page, viewport, t0Ref, options = {}) {
   const cdp = await page.createCDPSession();
   const frames = [];
+  const quality = Number.isFinite(options.quality)
+    ? Math.max(1, Math.min(100, Math.round(options.quality)))
+    : DEFAULT_SCREENCAST_QUALITY;
 
   cdp.on('Page.screencastFrame', async (frame) => {
     // t0Ref.t is set the moment we kick off the screencast so offsets are video-relative.
@@ -341,7 +729,7 @@ async function startScreencast(page, viewport, t0Ref) {
   t0Ref.t = Date.now();
   await cdp.send('Page.startScreencast', {
     format: 'jpeg',
-    quality: 80,
+    quality,
     maxWidth: viewport.width,
     maxHeight: viewport.height,
     everyNthFrame: 1,
@@ -426,6 +814,9 @@ async function runStep(page, step, t0Ref, moments, index, vars) {
   switch (type) {
     case 'navigate': {
       await page.goto(target, { waitUntil: step.waitUntil || 'networkidle2', timeout: 45000 });
+      // Fresh document re-injects the cursor off-screen; re-seat it where it last was so it stays
+      // visible on the new page instead of vanishing.
+      if (mouse.x != null && mouse.y != null) await cursorPlace(page, mouse.x, mouse.y);
       break;
     }
     case 'click': {
@@ -457,28 +848,73 @@ async function runStep(page, step, t0Ref, moments, index, vars) {
       console.log(`  ⧉ captured ${step.as} = ${JSON.stringify(value)}`);
       break;
     }
+    case 'focus': {
+      const handle = await waitForSelectorRetry(page, target, {
+        timeout: Number(step.timeoutMs || 12000),
+        retries: Number.isFinite(step.retries) ? step.retries : 4,
+      });
+      if (!handle) throw new Error(`Selector not found for focus: ${target}`);
+      const focusStart = Date.now() - t0Ref.t;
+      ({ x, y } = await fitTargetForShot(page, handle, Number(step.fitMs || 850)));
+      await sleep(Number(step.ms ?? 1200));
+      const action = step.caption || step.why || target || type;
+      const startMoment = {
+        time: focusStart,
+        action,
+        type,
+        x,
+        y,
+      };
+      const endMoment = {
+        time: Date.now() - t0Ref.t,
+        action,
+        type,
+        x,
+        y,
+      };
+      if (Number.isFinite(step.speed)) {
+        startMoment.speed = step.speed;
+        endMoment.speed = step.speed;
+      }
+      moments.push(startMoment, endMoment);
+      recorded = true;
+      break;
+    }
     case 'scroll': {
-      const dy = Number(step.deltaY ?? 600);
-      const dur = Number(step.ms ?? 1600); // scroll duration; `linear: true` keeps a constant pace
+      const requestedDy = Number(step.deltaY ?? 600);
+      const dy = await clampTourScrollDelta(page, requestedDy, step.allowFooter === true);
+      const baseDur = Number(step.ms ?? 1600); // scroll duration; `linear: true` keeps a constant pace
+      const dur =
+        Math.abs(requestedDy) > 1 && Math.abs(dy) < Math.abs(requestedDy)
+          ? Math.max(500, Math.round(baseDur * (Math.abs(dy) / Math.abs(requestedDy))))
+          : baseDur;
+      const rest = await cursorRestForScroll(page, dy, dur);
       const startT = Date.now() - t0Ref.t;
-      await smoothScroll(page, dy, dur, step.linear);
+      if (Math.abs(dy) > 1) {
+        await smoothScroll(page, dy, dur, step.linear);
+      } else {
+        await sleep(220);
+      }
       const endT = Date.now() - t0Ref.t;
       // Emit a moment every ~1.2s across the scroll. Without these, a long scroll looks to trim.js
       // like a big gap between actions (dead air) and gets cut — these keep it as one clip.
-      const waypoints = Math.max(1, Math.ceil((endT - startT) / 1200));
-      for (let w = 1; w <= waypoints; w++) {
-        moments.push({
-          time: Math.round(startT + ((endT - startT) * w) / waypoints),
-          action: step.caption || step.why || 'scroll',
-          type: 'scroll',
-          x: null,
-          y: null,
-        });
+      if (Math.abs(dy) > 1) {
+        const waypoints = Math.max(1, Math.ceil((endT - startT) / 1200));
+        for (let w = 1; w <= waypoints; w++) {
+          moments.push({
+            time: Math.round(startT + ((endT - startT) * w) / waypoints),
+            action: step.caption || step.why || 'scroll',
+            type: 'scroll',
+            x: rest.x,
+            y: rest.y,
+          });
+        }
       }
       recorded = true;
       break;
     }
     case 'wait': {
+      ({ x, y } = await cursorRestForContext(page, 650));
       await sleep(Number(step.ms ?? 1000));
       break;
     }
@@ -558,6 +994,10 @@ async function main() {
           `--window-size=${viewport.width},${viewport.height}`,
           '--hide-scrollbars',
           '--force-device-scale-factor=1',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-features=CalculateNativeWinOcclusion',
           '--no-first-run',
           '--no-default-browser-check',
         ],
@@ -603,8 +1043,12 @@ async function main() {
       /* about:blank or not ready yet — evaluateOnNewDocument covers the real pages */
     }
 
-    console.log('• Starting screencast…');
-    screencast = await startScreencast(page, viewport, t0Ref);
+    console.log(`• Starting screencast (JPEG q${rec.screencastQuality})…`);
+    screencast = await startScreencast(page, viewport, t0Ref, { quality: rec.screencastQuality });
+
+    // Seat the visible cursor at a natural resting spot (lower-centre) so it's on screen from the
+    // first frame — it stays put while the page scrolls, then glides to targets on interaction.
+    await cursorPlace(page, Math.round(viewport.width * 0.5), Math.round(viewport.height * 0.68));
 
     console.log(`• Executing ${plan.steps.length} steps…`);
     for (let i = 0; i < plan.steps.length; i++) {
@@ -623,8 +1067,10 @@ async function main() {
       else await humanPause();
     }
 
-    // Let the final state settle on screen before we cut.
-    await sleep(800);
+    // Let the final state settle on screen before we cut. CDP screencast delivery can lag during
+    // long scrolls, so final focus shots need real tail room for the encoded video to catch up.
+    const finalSettleMs = Number(plan.meta && plan.meta.finalSettleMs);
+    await sleep(Number.isFinite(finalSettleMs) ? Math.max(0, finalSettleMs) : 800);
   } finally {
     if (screencast) await screencast.stop();
     if (browser) {

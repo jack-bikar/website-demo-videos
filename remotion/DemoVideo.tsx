@@ -30,7 +30,7 @@ type Meta = {
   topCropPx?: number;
 };
 
-const clips = clipsData as Clip[];
+const rawClips = clipsData as Clip[];
 const keyframes = keyframesData as Keyframe[];
 // Everything is configured in one file: the composition reads its `meta` straight from the
 // browse plan, so there's no second config to keep in sync.
@@ -70,6 +70,26 @@ const viewport = ((browsePlan as { viewport?: { width?: number; height?: number 
 export const VIDEO_W = Number.isFinite(viewport.width) ? Number(viewport.width) : 1280;
 export const VIDEO_H = Number.isFinite(viewport.height) ? Number(viewport.height) : 800;
 const TOP_CROP_PX = Number.isFinite(meta.topCropPx) ? Math.max(0, Number(meta.topCropPx)) : 0;
+const JOIN_GAP_MS = 120;
+
+export const mergeContinuousClips = (cs: Clip[]): Clip[] => {
+  const merged: Clip[] = [];
+  for (const clip of cs) {
+    const prev = merged[merged.length - 1];
+    const gap = prev ? clip.start - prev.end : Infinity;
+    const sameAction = prev && (prev.action || '') === (clip.action || '');
+    const sameSpeed = prev && Math.abs(clipSpeed(prev) - clipSpeed(clip)) < 0.001;
+    const sameCrop = prev && Number(prev.topCropPx ?? TOP_CROP_PX) === Number(clip.topCropPx ?? TOP_CROP_PX);
+    if (prev && gap >= 0 && gap <= JOIN_GAP_MS && sameAction && sameSpeed && sameCrop) {
+      prev.end = Math.max(prev.end, clip.end);
+    } else {
+      merged.push({ ...clip });
+    }
+  }
+  return merged;
+};
+
+const clips = mergeContinuousClips(rawClips);
 const loadingOverlayFrames =
   meta.loadingOverlay === true
     ? Math.round((Number.isFinite(meta.loadingOverlaySeconds) ? Number(meta.loadingOverlaySeconds) : 3) * FPS)
@@ -83,10 +103,8 @@ const msToFrames = (ms: number) => (ms / 1000) * FPS;
 const clipOutputFrames = (clip: Clip) => Math.max(1, Math.round(msToFrames(clip.end - clip.start) / clipSpeed(clip)));
 
 /**
- * Lay clips on the output timeline with overlapping crossfades. Each clip starts while the
- * previous one is still on screen and fades in over the overlap, so scenes dissolve into one
- * another. The crossfade is clamped to a fraction of the shorter neighbour so short clips don't
- * fully overlap. Returns absolute `from`/`durationInFrames` plus the fade lengths to apply.
+ * Lay clips on the output timeline. Source-contiguous split clips are merged before this point,
+ * so a manual split does not force a second video seek or introduce a visible seam.
  */
 type Placed = { clip: Clip; from: number; durationInFrames: number; fadeIn: number; fadeOut: number };
 export function layoutClips(cs: Clip[]): { placed: Placed[]; totalFrames: number } {
@@ -99,7 +117,7 @@ export function layoutClips(cs: Clip[]): { placed: Placed[]; totalFrames: number
     const fadeIn = i === 0 ? Math.min(TRANSITION_FRAMES, Math.floor(dur[i] * 0.4)) : fadeBetween(dur[i - 1], dur[i]);
     const fadeOut = i === cs.length - 1 ? Math.min(TRANSITION_FRAMES, Math.floor(dur[i] * 0.4)) : 0;
     placed.push({ clip: cs[i], from: cursor, durationInFrames: dur[i], fadeIn, fadeOut });
-    // Advance so the next clip overlaps this one by their shared crossfade.
+    // Advance by the clip length. Transition overlap is disabled for source-contiguous flow.
     const fadeToNext = i < cs.length - 1 ? fadeBetween(dur[i], dur[i + 1]) : 0;
     cursor += dur[i] - fadeToNext;
   }
@@ -107,8 +125,8 @@ export function layoutClips(cs: Clip[]): { placed: Placed[]; totalFrames: number
   return { placed, totalFrames };
 }
 
-/** Full composition length: intro card + crossfaded clip track + outro card. Consumed by Root.tsx. */
-export const totalDurationInFrames = (cs: Clip[]) => INTRO_FRAMES + layoutClips(cs).totalFrames + OUTRO_FRAMES;
+/** Full composition length: intro card + clip track + outro card. Consumed by Root.tsx. */
+export const totalDurationInFrames = (cs: Clip[]) => INTRO_FRAMES + layoutClips(mergeContinuousClips(cs)).totalFrames + OUTRO_FRAMES;
 
 // ---- Camera (zoom) --------------------------------------------------------
 /**
@@ -395,7 +413,7 @@ export const DemoVideo: React.FC = () => {
         </Sequence>
       ) : null}
 
-      {/* Full-bleed footage. Clips overlap and fade so scenes dissolve into one another. */}
+      {/* Full-bleed footage. Source-contiguous splits are coalesced so playback stays seamless. */}
       {placed.map(({ clip, from, durationInFrames, fadeIn, fadeOut }, i) => (
         <Sequence key={i} from={INTRO_FRAMES + from} durationInFrames={durationInFrames}>
           <ClipFootage clip={clip} durationInFrames={durationInFrames} fadeIn={fadeIn} fadeOut={fadeOut} />

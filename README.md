@@ -7,9 +7,9 @@ and intro/outro cards are overlaid, and the whole thing is rendered with [Remoti
 You configure **one file** — [`scripts/browse-plan.json`](scripts/browse-plan.json) — and run one command.
 
 ```
-browse-plan.json ──▶ record ──▶ trim ──▶ keyframes ──▶ render ──▶ output/demo.mp4
-   (you edit)        capture    cut       zoom          captions
-                     footage    dead air  keyframes     + encode
+browse-plan.json ──▶ record ──▶ smooth ──▶ trim ──▶ keyframes ──▶ render ──▶ output/demo.mp4
+   (you edit)        capture    60fps      cut       zoom          captions
+                     footage    source     dead air  keyframes     + encode
 ```
 
 ---
@@ -64,7 +64,8 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
     "connectUrl": "http://127.0.0.1:9222",   // connect mode: the debug-port Chrome to attach to
     "headful": false,                        // local mode: show the window instead of headless
     "userDataDir": null,                     // local mode: reuse a Chrome profile dir (start logged in)
-    "chromePath": null                       // local mode: explicit Chrome/Chromium executable path
+    "chromePath": null,                      // local mode: explicit Chrome/Chromium executable path
+    "screencastQuality": 92                  // capture JPEG quality, higher reduces scroll shimmer
   },
 
   "meta": {                                  // the on-screen polish (all optional)
@@ -73,7 +74,8 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
     "outro": { "title": "Try it yourself", "subtitle": "localhost:8731" }, // outro CTA card (omit to skip)
     "playbackSpeed": 4,                      // global footage speed-up (per-step `speed` overrides it)
     "captions": true,                        // false = no cards and no lower-third subtitles
-    "zoom": true                             // false = steady shot, no per-action zoom in/out
+    "zoom": true,                            // false = steady shot, no per-action zoom in/out
+    "renderQuality": "draft"                 // "draft" | "standard" | "final" — final render encode quality
   },
 
   "steps": [
@@ -171,18 +173,36 @@ All connections use a 180s CDP timeout, so a busy SPA won't trip `Runtime.callFu
 
 | Command | What it does |
 | --- | --- |
-| `npm run demo` | Full pipeline: record → trim → keyframes → render → `output/demo.mp4` |
+| `npm run demo` | Full pipeline: record → smooth → trim → keyframes → render → `output/demo.mp4` |
 | `npm run demo:local` | Same, forcing local-browser recording |
 | `npm run record` | Record footage → `recordings/raw.mp4`, `public/raw.mp4`, `scripts/moments.json` |
 | `npm run record:local` | Record by launching a local Chrome |
 | `npm run record:connect` | Record by attaching to a debug-port Chrome (`DEMO_CONNECT_URL`, default `:9222`) |
+| `npm run smooth` | Motion-interpolate the raw capture to 60fps → `public/raw.mp4` |
 | `npm run trim` | Cut dead air → `scripts/clips.json` |
 | `npm run keyframes` | Generate camera zooms → `scripts/keyframes.json` |
 | `npm run render` | Render the composition → `output/demo.mp4` |
+| `npm run preview` | Open the interactive preview/editor (cut, retime, set render quality) |
 | `npm run studio` | Open the Remotion studio to preview |
 
 Each stage writes a real file, so stages are independently re-runnable and debuggable. After tweaking the
 plan's `meta` (captions/speed), you only need to re-run `npm run render`.
+
+### Preview tool (`npm run preview`)
+
+The preview tool is a browser editor for the recorded footage — cut dead air, retime sections, and pick the
+render quality before rendering:
+
+- **Render quality** — pick **Draft** (fast `veryfast`/CRF 26 encode, good for testing), **Standard**, or
+  **Final** (`slow`/CRF 16, best quality) before rendering. The choice is saved to `meta.renderQuality`, so
+  `npm run render` honors it too. Override per-run with `DEMO_RENDER_QUALITY=final npm run render`; explicit
+  `DEMO_RENDER_CRF` / `DEMO_RENDER_PRESET` still take precedence.
+
+For scroll-heavy demos, `npm run smooth` is the important quality stage: CDP screencasts often capture at
+roughly 15-25fps, so the smoother writes an interpolated 60fps copy to `public/raw.mp4` while leaving
+`recordings/raw.mp4` untouched. The default `blend` mode is fast enough for normal iteration. Use
+`DEMO_SMOOTH_MODE=mci npm run smooth` for the cleanest motion-compensated final pass when you can wait, or
+`DEMO_SMOOTH_MODE=fps npm run smooth` for a plain constant-FPS conversion with no interpolation.
 
 ---
 
@@ -192,11 +212,13 @@ plan's `meta` (captions/speed), you only need to re-run `npm run render`.
    human-like pacing and captures real video frames over the Chrome DevTools Protocol screencast, encoding
    them to `recordings/raw.mp4` with ffmpeg (real-time paced). It records a `moment` per step with its
    timestamp, click coordinates, caption, and optional speed.
-2. **Trim** ([`scripts/trim.js`](scripts/trim.js)) turns moments into clips, padding each action and cutting
+2. **Smooth** ([`scripts/smooth.js`](scripts/smooth.js)) turns the low-frame-rate CDP capture into the
+   60fps source Remotion reads from `public/raw.mp4`.
+3. **Trim** ([`scripts/trim.js`](scripts/trim.js)) turns moments into clips, padding each action and cutting
    the dead air between far-apart actions.
-3. **Keyframes** ([`scripts/keyframes.js`](scripts/keyframes.js)) emits a zoom-in/zoom-out pair per action so
+4. **Keyframes** ([`scripts/keyframes.js`](scripts/keyframes.js)) emits a zoom-in/zoom-out pair per action so
    the camera eases toward each click.
-4. **Render** ([`remotion/DemoVideo.tsx`](remotion/DemoVideo.tsx)) composites it all: the footage in a
+5. **Render** ([`remotion/DemoVideo.tsx`](remotion/DemoVideo.tsx)) composites it all: the footage in a
    rounded browser frame on a gradient background, animated zooms, lower-third captions, and the intro/outro
    cards — reading the caption track and speed straight from `browse-plan.json`'s `meta`.
 
@@ -207,7 +229,7 @@ plan's `meta` (captions/speed), you only need to re-run `npm run render`.
 | `scripts/browse-plan.json` | **The single config file you edit** (committed) |
 | `.env.local` | `STEEL_API_KEY` secret (cloud mode only; git-ignored) |
 | `scripts/moments.json`, `clips.json`, `keyframes.json` | Generated pipeline artifacts |
-| `recordings/raw.mp4`, `public/raw.mp4` | Captured footage |
+| `recordings/raw.mp4`, `public/raw.mp4` | Original capture and smoothed Remotion source |
 | `output/demo.mp4` | Final video |
 
 ---
