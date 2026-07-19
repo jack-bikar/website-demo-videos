@@ -1,0 +1,73 @@
+◇ injected env (1) from .env.local // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+{"type":"log","level":"info","message":"• Launching local Chrome (headless)"}
+{"type":"log","level":"info","message":"  /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
+{"type":"log","level":"info","message":"• Starting screencast (JPEG q82)…"}
+{"type":"log","level":"info","message":"• Executing 5 steps…"}
+{"type":"log","level":"info","message":"  ✓ step 1 (navigate)"}
+{"type":"progress","value":0.16666666666666666,"message":"Step 1/5"}
+{"type":"log","level":"info","message":"  ✓ step 2 (wait) @ 960,734"}
+{"type":"progress","value":0.3333333333333333,"message":"Step 2/5"}
+{"type":"log","level":"info","message":"  ✓ step 3 (scroll)"}
+{"type":"progress","value":0.5,"message":"Step 3/5"}
+{"type":"log","level":"info","message":"  ✓ step 4 (click) @ 1335,32"}
+{"type":"progress","value":0.6666666666666666,"message":"Step 4/5"}
+{"type":"log","level":"info","message":"  ✓ step 5 (focus) @ 1399,296"}
+{"type":"progress","value":0.8333333333333334,"message":"Step 5/5"}
+{"type":"log","level":"info","message":"• Captured 1240 frames; encoding to /Users/jack.bikar/Workspace/website-demo-videos/apps/studio/data/projects/d8223288-5244-4804-9116-a01d82e6d0b4/takes/7a1cbebe-2837-40eb-8d84-fa2962fd66ff/raw.mp4…"}
+{"type":"progress","value":0.95,"message":"Encoding frames"}
+ffmpeg version 8.1 Copyright (c) 2000-2026 the FFmpeg developers
+  built with Apple clang version 16.0.0 (clang-1600.0.26.6)
+  configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/8.1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags= --enable-ffplay --enable-gpl --enable-libsvtav1 --enable-libopus --enable-libx264 --enable-libmp3lame --enable-libdav1d --enable-libvmaf --enable-libvpx --enable-libx265 --enable-openssl --enable-videotoolbox --enable-audiotoolbox --enable-neon
+  libavutil      60. 26.100 / 60. 26.100
+  libavcodec     62. 28.100 / 62. 28.100
+  libavformat    62. 12.100 / 62. 12.100
+  libavdevice    62.  3.100 / 62.  3.100
+  libavfilter    11. 14.100 / 11. 14.100
+  libswscale      9.  5.100 /  9.  5.100
+  libswresample   6.  3.100 /  6.  3.100
+-vsync is deprecated. Use -fps_mode
+Input #0, concat, from '/var/folders/qp/_yx0s3097x50wmmbg9cs53kw0000gn/T/demo-frames-5SZ0ju/frames.txt':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 1920x1080 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (mjpeg (native) -> h264 (libx264))
+Press [q] to stop, [?] for help
+[swscaler @ 0xb997c4000] deprecated pixel format used, make sure you did set range correctly
+[libx264 @ 0xb98c85180] using SAR=1/1
+[libx264 @ 0xb98c85180] using cpu capabilities: ARMv8 NEON DotProd
+[libx264 @ 0xb98c85180] profile High, level 4.0, 4:2:0, 8-bit
+[libx264 @ 0xb98c85180] 264 - core 165 r3222 b35605a - H.264/MPEG-4 AVC codec - Copyleft 2003-2025 - http://www.videolan.org/x264.html - options: cabac=1 ref=1 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=2 psy=1 psy_rd=1.00:0.00 mixed_ref=0 me_range=16 chroma_me=1 trellis=0 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=0 threads=12 lookahead_threads=4 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=1 keyint=250 keyint_min=25 scenecut=40 intra_refresh=0 rc_lookahead=10 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00
+Output #0, mp4, to '/Users/jack.bikar/Workspace/website-demo-videos/apps/studio/data/projects/d8223288-5244-4804-9116-a01d82e6d0b4/takes/7a1cbebe-2837-40eb-8d84-fa2962fd66ff/raw.mp4':
+  Metadata:
+    encoder         : Lavf62.12.100
+  Stream #0:0: Video: h264 (avc1 / 0x31637661), yuv420p(pc, bt470bg/unknown/unknown, progressive), 1920x1080 [SAR 1:1 DAR 16:9], q=2-31, 25 fps, 12800 tbn
+    Metadata:
+      encoder         : Lavc62.28.100 libx264
+    Side data:
+      CPB properties: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
+frame=   58 fps=0.0 q=17.0 size=       0KiB time=00:00:02.92 bitrate=   0.1kbits/s dup=0 drop=106 speed=5.78x elapsed=0:00:00.50    frame=  116 fps=115 q=28.0 size=     256KiB time=00:00:10.16 bitrate= 206.5kbits/s dup=0 drop=174 speed=10.1x elapsed=0:00:01.00    frame=  165 fps=109 q=28.0 size=    1536KiB time=00:00:12.12 bitrate=1038.2kbits/s dup=0 drop=243 speed=8.02x elapsed=0:00:01.51    frame=  262 fps=130 q=28.0 size=    3328KiB time=00:00:16.52 bitrate=1650.3kbits/s dup=0 drop=381 speed= 8.2x elapsed=0:00:02.01    frame=  374 fps=148 q=28.0 size=    3328KiB time=00:00:21.00 bitrate=1298.3kbits/s dup=0 drop=544 speed=8.34x elapsed=0:00:02.51    frame=  480 fps=159 q=28.0 size=    3584KiB time=00:00:25.28 bitrate=1161.4kbits/s dup=0 drop=684 speed=8.36x elapsed=0:00:03.02    [mp4 @ 0xb99018500] Starting second pass: moving the moov atom to the beginning of the file
+[out#0/mp4 @ 0xb99822880] video:3874KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.172684%
+frame=  527 fps=167 q=-1.0 Lsize=    3881KiB time=00:00:27.40 bitrate=1160.4kbits/s dup=0 drop=714 speed=8.66x elapsed=0:00:03.16    
+[libx264 @ 0xb98c85180] frame I:3     Avg QP: 9.52  size: 53028
+[libx264 @ 0xb98c85180] frame P:201   Avg QP:17.02  size: 14669
+[libx264 @ 0xb98c85180] frame B:323   Avg QP:21.28  size:  2660
+[libx264 @ 0xb98c85180] consecutive B-frames: 12.9% 12.1% 12.0% 63.0%
+[libx264 @ 0xb98c85180] mb I  I16..4: 77.6%  4.0% 18.4%
+[libx264 @ 0xb98c85180] mb P  I16..4:  7.7%  3.8%  2.6%  P16..4:  6.4%  1.4%  0.7%  0.0%  0.0%    skip:77.5%
+[libx264 @ 0xb98c85180] mb B  I16..4:  0.5%  0.9%  0.1%  B16..8:  2.4%  0.7%  0.1%  direct: 1.6%  skip:93.6%  L0:49.6% L1:37.8% BI:12.6%
+[libx264 @ 0xb98c85180] 8x8 transform intra:29.6% inter:58.8%
+[libx264 @ 0xb98c85180] coded y,uvDC,uvAC intra: 35.7% 23.6% 4.2% inter: 2.2% 1.9% 0.3%
+[libx264 @ 0xb98c85180] i16 v,h,dc,p: 72% 25%  3%  1%
+[libx264 @ 0xb98c85180] i8 v,h,dc,ddl,ddr,vr,hd,vl,hu: 16% 43% 28%  1%  2%  1%  3%  1%  5%
+[libx264 @ 0xb98c85180] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu: 13% 42% 14%  2%  6%  3%  7%  3% 10%
+[libx264 @ 0xb98c85180] i8c dc,h,v,p: 60% 26% 12%  2%
+[libx264 @ 0xb98c85180] Weighted P-Frames: Y:2.0% UV:1.0%
+[libx264 @ 0xb98c85180] kb/s:1082.31
+{"type":"log","level":"info","message":"✓ Recorded 10 moments over ~25.6s."}
+{"type":"progress","value":0.6,"message":"Captured; post-processing"}
+{"type":"log","level":"info","message":"• Smoothing /Users/jack.bikar/Workspace/website-demo-videos/apps/studio/data/projects/d8223288-5244-4804-9116-a01d82e6d0b4/takes/7a1cbebe-2837-40eb-8d84-fa2962fd66ff/raw.mp4 → /Users/jack.bikar/Workspace/website-demo-videos/apps/studio/data/projects/d8223288-5244-4804-9116-a01d82e6d0b4/takes/7a1cbebe-2837-40eb-8d84-fa2962fd66ff/smooth.mp4 (60fps, blend auto)…"}
+[swscaler @ 0x9ec3b0000] deprecated pixel format used, make sure you did set range correctly
+{"type":"log","level":"info","message":"✓ Smoothed to 60fps → /Users/jack.bikar/Workspace/website-demo-videos/apps/studio/data/projects/d8223288-5244-4804-9116-a01d82e6d0b4/takes/7a1cbebe-2837-40eb-8d84-fa2962fd66ff/smooth.mp4 (11.2 MB)"}
+{"type":"log","level":"info","message":"✓ Derived 1 clip(s) and 0 keyframe(s)."}
+{"type":"result","data":{"durationMs":25592,"frameCount":1240,"moments":10}}

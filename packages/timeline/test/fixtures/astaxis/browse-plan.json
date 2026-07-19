@@ -1,0 +1,68 @@
+{
+  "url": "https://astaxis.vercel.app/",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "hideText": [
+    "Concept demo by Jack Bikar — not an official site.",
+    "Concept demo by Jack Bikar - not an official site."
+  ],
+  "recording": {
+    "mode": "local",
+    "connectUrl": "http://127.0.0.1:9222",
+    "headful": false,
+    "userDataDir": null,
+    "chromePath": null,
+    "stepPauseMs": 0
+  },
+  "meta": {
+    "playbackSpeed": 1.3,
+    "captions": false,
+    "zoom": false,
+    "preserveStart": false,
+    "trimTailMs": 1500,
+    "trimMergeMaxGapMs": 6000,
+    "trimDeadAirGapMs": 6000,
+    "loadingOverlay": true,
+    "loadingOverlaySeconds": 2.7,
+    "topCropPx": 0,
+    "finalSettleMs": 5000,
+    "finalHoldSeconds": 4,
+    "renderQuality": "final"
+  },
+  "steps": [
+    {
+      "type": "navigate",
+      "target": "https://astaxis.vercel.app/",
+      "waitUntil": "networkidle2",
+      "silent": true,
+      "why": "Load the homepage"
+    },
+    {
+      "type": "wait",
+      "ms": 300,
+      "why": "Hold on the hero"
+    },
+    {
+      "type": "scroll",
+      "deltaY": 9000,
+      "ms": 7000,
+      "linear": true,
+      "allowFooter": true,
+      "why": "One continuous scroll through the entire site at a steady pace"
+    },
+    {
+      "type": "click",
+      "target": "header a[href=\"/book\"]",
+      "why": "Click the red Book Now button in the header"
+    },
+    {
+      "type": "focus",
+      "target": "main form, form, [role=\"form\"]",
+      "fitMs": 800,
+      "ms": 5200,
+      "why": "Booking page loads — fit the booking form and rest the cursor on its right corner"
+    }
+  ]
+}

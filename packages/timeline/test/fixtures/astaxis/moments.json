@@ -1,0 +1,72 @@
+[
+  {
+    "time": 9784,
+    "action": "Hold on the hero",
+    "type": "wait",
+    "x": 960,
+    "y": 734
+  },
+  {
+    "time": 11797,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 12965,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 14133,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 15301,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 16469,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 17637,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 19366,
+    "action": "Click the red Book Now button in the header",
+    "type": "click",
+    "x": 1335,
+    "y": 32
+  },
+  {
+    "time": 19390,
+    "action": "Booking page loads — fit the booking form and rest the cursor on its right corner",
+    "type": "focus",
+    "x": 1399,
+    "y": 296
+  },
+  {
+    "time": 26528,
+    "action": "Booking page loads — fit the booking form and rest the cursor on its right corner",
+    "type": "focus",
+    "x": 1399,
+    "y": 296
+  }
+]

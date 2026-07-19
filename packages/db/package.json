@@ -1,0 +1,17 @@
+{
+  "name": "@wdv/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@wdv/schema": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "better-sqlite3": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11"
+  }
+}

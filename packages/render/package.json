@@ -1,0 +1,16 @@
+{
+  "name": "@wdv/render",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@wdv/schema": "workspace:*",
+    "@wdv/timeline": "workspace:*",
+    "@remotion/bundler": "4.0.469",
+    "@remotion/renderer": "4.0.469",
+    "@wdv/compositions": "workspace:*"
+  }
+}

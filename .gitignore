@@ -1,4 +1,6 @@
 node_modules/
+.next/
+.playwright-cli/
 .env
 .env.local
 recordings/

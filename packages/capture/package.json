@@ -1,0 +1,15 @@
+{
+  "name": "@wdv/capture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@wdv/schema": "workspace:*",
+    "dotenv": "^17.3.1",
+    "puppeteer-core": "^25.1.0",
+    "steel-sdk": "^0.18.0"
+  }
+}

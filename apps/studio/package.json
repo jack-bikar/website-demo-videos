@@ -1,0 +1,30 @@
+{
+  "name": "@wdv/studio",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 4600",
+    "build": "next build",
+    "start": "next start -p 4600"
+  },
+  "dependencies": {
+    "@remotion/player": "4.0.469",
+    "@wdv/compositions": "workspace:*",
+    "@wdv/db": "workspace:*",
+    "@wdv/engine": "workspace:*",
+    "@wdv/schema": "workspace:*",
+    "@wdv/timeline": "workspace:*",
+    "next": "^15.4.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "remotion": "4.0.469",
+    "zod": "^3.24.0",
+    "drizzle-orm": "^0.44.0",
+    "better-sqlite3": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "typescript": "^5.6.0"
+  }
+}

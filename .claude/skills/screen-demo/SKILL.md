@@ -245,4 +245,5 @@ Renders the `DemoVideo` composition to `output/demo.mp4`. Report the **output pa
 - ffmpeg errors during render: confirm `ffmpeg` is on PATH (`which ffmpeg`). Remotion needs it for encoding.
 
 **Want to preview before rendering.**
-- `npx remotion studio remotion/index.ts` opens the interactive studio.
+- `npx remotion studio remotion/index.ts` opens the interactive Remotion studio.
+- `npm run studio` opens the web studio (project-based: record takes, edit cuts, render and download from the browser at http://localhost:4600).

@@ -1,0 +1,20 @@
+{
+  "name": "@wdv/compositions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@wdv/schema": "workspace:*",
+    "@wdv/timeline": "workspace:*",
+    "remotion": "4.0.469",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

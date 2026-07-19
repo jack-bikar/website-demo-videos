@@ -1,26 +1,55 @@
 {
   "name": "website-demo-videos",
   "private": true,
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
-    "record": "node scripts/record.js",
-    "record:local": "DEMO_LOCAL=1 node scripts/record.js",
-    "record:connect": "DEMO_CONNECT_URL=${DEMO_CONNECT_URL:-http://127.0.0.1:9222} node scripts/record.js",
-    "demo:local": "node scripts/demo.js --local",
-    "smooth": "node scripts/smooth.js",
-    "trim": "node scripts/trim.js",
-    "keyframes": "node scripts/keyframes.js",
-    "render": "node scripts/render.js",
-    "render:full": "DEMO_RENDER_MODE=full node scripts/render.js",
-    "render:fast": "DEMO_RENDER_MODE=fast node scripts/render.js",
-    "preview": "node scripts/preview-server.js",
-    "studio": "remotion studio remotion/index.ts",
-    "demo": "node scripts/demo.js"
+    "record": "tsx packages/cli/src/record.ts",
+    "record:local": "DEMO_LOCAL=1 tsx packages/cli/src/record.ts",
+    "record:connect": "DEMO_CONNECT_URL=${DEMO_CONNECT_URL:-http://127.0.0.1:9222} tsx packages/cli/src/record.ts",
+    "demo:local": "tsx packages/cli/src/demo.ts --local",
+    "smooth": "tsx packages/cli/src/smooth.ts",
+    "trim": "tsx packages/cli/src/trim.ts",
+    "keyframes": "tsx packages/cli/src/keyframes.ts",
+    "render": "tsx packages/cli/src/render.ts",
+    "render:full": "DEMO_RENDER_MODE=full tsx packages/cli/src/render.ts",
+    "render:fast": "DEMO_RENDER_MODE=fast tsx packages/cli/src/render.ts",
+    "studio": "pnpm -F @wdv/studio dev",
+    "demo": "tsx packages/cli/src/demo.ts",
+    "test": "pnpm -r --if-present test",
+    "studio:remotion": "remotion studio remotion/index.ts"
   },
   "dependencies": {
-    "@remotion/cli": "^4.0.469",
-    "@remotion/renderer": "^4.0.469",
+    "@remotion/cli": "4.0.469",
+    "@remotion/renderer": "4.0.469",
+    "dotenv": "^17.3.1",
     "puppeteer-core": "^25.1.0",
-    "remotion": "^4.0.469",
-    "steel-sdk": "^0.18.0"
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "remotion": "4.0.469",
+    "steel-sdk": "^0.18.0",
+    "@wdv/timeline": "workspace:*",
+    "@wdv/schema": "workspace:*",
+    "@wdv/compositions": "workspace:*",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "better-sqlite3"
+    ],
+    "overrides": {
+      "remotion": "4.0.469",
+      "@remotion/cli": "4.0.469",
+      "@remotion/renderer": "4.0.469",
+      "@remotion/bundler": "4.0.469",
+      "@remotion/player": "4.0.469",
+      "@remotion/media-parser": "4.0.469",
+      "@remotion/transitions": "4.0.469"
+    }
   }
 }

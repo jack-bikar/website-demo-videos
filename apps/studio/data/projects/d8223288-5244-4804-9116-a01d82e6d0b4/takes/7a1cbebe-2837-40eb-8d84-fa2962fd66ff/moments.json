@@ -1,0 +1,72 @@
+[
+  {
+    "time": 6993,
+    "action": "Hold on the hero",
+    "type": "wait",
+    "x": 960,
+    "y": 734
+  },
+  {
+    "time": 9907,
+    "action": "One continuous scroll through the site",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 11074,
+    "action": "One continuous scroll through the site",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 12242,
+    "action": "One continuous scroll through the site",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 13409,
+    "action": "One continuous scroll through the site",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 14577,
+    "action": "One continuous scroll through the site",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 15744,
+    "action": "One continuous scroll through the site",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719
+  },
+  {
+    "time": 17957,
+    "action": "Click Book Now",
+    "type": "click",
+    "x": 1335,
+    "y": 32
+  },
+  {
+    "time": 18473,
+    "action": "Fit the booking form",
+    "type": "focus",
+    "x": 1399,
+    "y": 296
+  },
+  {
+    "time": 25592,
+    "action": "Fit the booking form",
+    "type": "focus",
+    "x": 1399,
+    "y": 296
+  }
+]

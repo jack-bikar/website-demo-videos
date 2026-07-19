@@ -1,0 +1,22 @@
+◇ injected env (1) from .env.local // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+{"type":"log","level":"info","message":"Render quality: draft (x264 preset veryfast, crf 26)"}
+{"type":"log","level":"info","message":"Clamped clip end from 28.16s to source duration 27.417s."}
+{"type":"log","level":"info","message":"• Bundling Remotion composition…"}
+{"type":"log","level":"info","message":"\nRendering frames 0–161 with Remotion"}
+{"type":"log","level":"info","message":"  rendered 0%"}
+{"type":"log","level":"info","message":"  rendered 10%"}
+{"type":"log","level":"info","message":"  rendered 20%"}
+{"type":"log","level":"info","message":"  rendered 30%"}
+{"type":"log","level":"info","message":"  rendered 40%"}
+{"type":"log","level":"info","message":"  rendered 50%"}
+{"type":"log","level":"info","message":"  rendered 60%"}
+{"type":"log","level":"info","message":"  rendered 70%"}
+{"type":"log","level":"info","message":"  rendered 100%"}
+{"type":"log","level":"info","message":"\nEncoding kept footage segment 1"}
+[swscaler @ 0x9369f8000] deprecated pixel format used, make sure you did set range correctly
+{"type":"log","level":"info","message":"\nJoining rendered segments"}
+[swscaler @ 0xa437ec000] deprecated pixel format used, make sure you did set range correctly
+[swscaler @ 0xa3ffd8000] deprecated pixel format used, make sure you did set range correctly
+{"type":"log","level":"info","message":"\nFast render complete: /Users/jack.bikar/Workspace/website-demo-videos/apps/studio/data/projects/d8223288-5244-4804-9116-a01d82e6d0b4/renders/20f921ba-fb96-4d04-b3a4-173800cae2fa.mp4"}
+{"type":"result","data":{"outputPath":"/Users/jack.bikar/Workspace/website-demo-videos/apps/studio/data/projects/d8223288-5244-4804-9116-a01d82e6d0b4/renders/20f921ba-fb96-4d04-b3a4-173800cae2fa.mp4","mode":"fast"}}
