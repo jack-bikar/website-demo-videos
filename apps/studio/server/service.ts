@@ -124,11 +124,40 @@ export function listRenders(projectId: string) {
   return db.select().from(renders).where(eq(renders.projectId, projectId)).all().reverse();
 }
 
-/** Default steps for a brand-new project: a simple scroll tour of the page. */
+export function defaultMeta() {
+  return {
+    playbackSpeed: 1.15,
+    captions: false,
+    zoom: false,
+    smoothMode: 'mci',
+    preserveStart: false,
+    trimTailMs: 1500,
+    trimMergeMaxGapMs: 6000,
+    trimDeadAirGapMs: 6000,
+    renderQuality: 'draft',
+  };
+}
+
+/** Default steps for a brand-new project: a slow, continuous scroll tour of the page. */
 export function defaultSteps(url: string) {
   return [
     { type: 'navigate', target: url, waitUntil: 'networkidle2', silent: true, why: 'Load the page' },
-    { type: 'wait', ms: 400, why: 'Hold on the hero' },
-    { type: 'scroll', deltaY: 6000, ms: 6000, linear: true, why: 'Tour the page top to bottom' },
+    {
+      type: 'wait',
+      ms: 800,
+      pace: 'slow',
+      direction: 'Let the viewer register the first viewport before movement starts.',
+      why: 'Hold on the hero',
+    },
+    {
+      type: 'scroll',
+      deltaY: 6000,
+      ms: 10000,
+      pace: 'slow',
+      smoothness: 'continuous',
+      linear: true,
+      direction: 'Move through the homepage as one gradual pass with no jump cuts.',
+      why: 'Slow continuous homepage tour',
+    },
   ];
 }

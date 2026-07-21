@@ -64,16 +64,18 @@ export function momentsToClips(moments: Moment[], options: TrimOptions = {}, raw
 
     const sameAction =
       (current._lastAction || '') === (next.action || '') && (current._lastType || '') === (next.type || '');
+    const sameSpeed = Math.abs(Number(current.speed ?? 0) - Number(next.speed ?? 0)) < 0.001;
     const tooMuchDeadAir = !sameAction && actionGap > deadAirGapMs;
     const closeEnoughToMerge = clipGap < mergeMaxGapMs;
 
-    if (!tooMuchDeadAir && closeEnoughToMerge) {
+    if (!tooMuchDeadAir && closeEnoughToMerge && sameSpeed) {
       current.end = Math.max(current.end, next.end);
       current._t = next._t;
       current._lastAction = next.action;
       current._lastType = next.type;
       // The first action's label stays as the merged clip's lead-in.
     } else {
+      if (!sameSpeed && next.start < current.end) current.end = Math.max(current.start, next.start);
       clips.push(current);
       current = { ...next };
     }

@@ -12,6 +12,8 @@ export interface ResolvedRecording {
   chromePath: string | undefined;
   stepPauseMs: number | null;
   screencastQuality: number;
+  /** Constant capture-cadence floor in fps (see recordingConfigSchema.captureFps). */
+  captureFps: number;
 }
 
 export interface CaptureRequest {

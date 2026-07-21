@@ -16,6 +16,12 @@ export const PROTOCOL_TIMEOUT = 180000;
 // return frames consistently.
 export const DEFAULT_SCREENCAST_QUALITY = 82;
 
+// CDP screencast is event-driven — Chrome only pushes a frame when it repaints, and throttles to
+// ~25fps under load, so fast scrolls step and static holds stall. We floor the capture at a steady
+// cadence by force-grabbing a screenshot whenever the screencast falls behind. 30 is comfortably
+// achievable in a cloud session and gives the mci smoothing stage a clean base to interpolate to 60.
+export const DEFAULT_CAPTURE_FPS = 30;
+
 const truthy = (v: unknown) => ['1', 'true', 'yes'].includes(String(v || '').toLowerCase());
 
 /**
@@ -36,6 +42,8 @@ export function resolveRecordingConfig(plan: BrowsePlan, env: NodeJS.ProcessEnv 
   const parsedStepPause = stepPauseRaw === undefined || stepPauseRaw === null ? null : Number(stepPauseRaw);
   const qualityRaw = env.DEMO_SCREENCAST_QUALITY !== undefined ? env.DEMO_SCREENCAST_QUALITY : r.screencastQuality;
   const parsedQuality = qualityRaw === undefined || qualityRaw === null ? null : Number(qualityRaw);
+  const captureFpsRaw = env.DEMO_CAPTURE_FPS !== undefined ? env.DEMO_CAPTURE_FPS : r.captureFps;
+  const parsedCaptureFps = captureFpsRaw === undefined || captureFpsRaw === null ? null : Number(captureFpsRaw);
   return {
     mode,
     connectUrl,
@@ -46,6 +54,9 @@ export function resolveRecordingConfig(plan: BrowsePlan, env: NodeJS.ProcessEnv 
     screencastQuality: Number.isFinite(parsedQuality as number)
       ? Math.max(1, Math.min(100, Math.round(parsedQuality as number)))
       : DEFAULT_SCREENCAST_QUALITY,
+    captureFps: Number.isFinite(parsedCaptureFps as number)
+      ? Math.max(10, Math.min(60, Math.round(parsedCaptureFps as number)))
+      : DEFAULT_CAPTURE_FPS,
   };
 }
 

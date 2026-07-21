@@ -9,6 +9,12 @@ import { z } from 'zod';
 export const stepTypeSchema = z.enum(['navigate', 'click', 'type', 'scroll', 'wait', 'focus', 'capture']);
 export type StepType = z.infer<typeof stepTypeSchema>;
 
+export const stepPaceSchema = z.enum(['very-slow', 'slow', 'normal', 'quick']);
+export type StepPace = z.infer<typeof stepPaceSchema>;
+
+export const stepSmoothnessSchema = z.enum(['standard', 'continuous']);
+export type StepSmoothness = z.infer<typeof stepSmoothnessSchema>;
+
 // Legacy plans use one loose step object rather than a strict discriminated union;
 // which optional fields apply depends on `type` (validated at execution time by the
 // recorder, which tolerates missing selectors by screenshotting and continuing).
@@ -23,6 +29,12 @@ export const stepSchema = z
     waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle0', 'networkidle2']).optional(),
     /** Suppress the moment (no clip is kept around this step). */
     silent: z.boolean().optional(),
+    /** Human-facing creative direction for this scene; kept with the plan for review. */
+    direction: z.string().optional(),
+    /** Named playback pacing; explicit `speed` still wins when both are present. */
+    pace: stepPaceSchema.optional(),
+    /** scroll: "continuous" uses constant movement and denser trim waypoints. */
+    smoothness: stepSmoothnessSchema.optional(),
     /** wait/scroll/focus: duration in ms. */
     ms: z.number().optional(),
     /** scroll: total pixels to scroll. */
@@ -61,6 +73,10 @@ export const recordingConfigSchema = z
     chromePath: z.string().nullable().optional(),
     stepPauseMs: z.number().nonnegative().optional(),
     screencastQuality: z.number().min(1).max(100).optional(),
+    /** Guaranteed constant capture cadence in fps. The screencast fills in as fast as Chrome
+     *  composites; this floor force-captures a frame whenever it stalls (static holds, throttled
+     *  scrolls) so motion never drops below a steady rate. */
+    captureFps: z.number().min(10).max(60).optional(),
   })
   .strict();
 export type RecordingConfig = z.infer<typeof recordingConfigSchema>;
@@ -75,6 +91,9 @@ export type TitleCard = z.infer<typeof titleCardSchema>;
 
 export const renderQualitySchema = z.enum(['draft', 'standard', 'final']);
 export type RenderQuality = z.infer<typeof renderQualitySchema>;
+
+export const smoothModeSchema = z.enum(['auto', 'mci', 'blend', 'fps']);
+export type SmoothModeSetting = z.infer<typeof smoothModeSchema>;
 
 /** Pluggable brand overlay shown while the site "loads" (replaces the legacy hardcoded one). */
 export const overlaySpecSchema = z
@@ -110,6 +129,8 @@ export const planMetaSchema = z
     topCropPx: z.number().nonnegative().optional(),
     finalSettleMs: z.number().nonnegative().optional(),
     finalHoldSeconds: z.number().nonnegative().optional(),
+    /** Frame interpolation mode. Use "mci" for scroll-heavy walkthroughs. */
+    smoothMode: smoothModeSchema.optional(),
     renderQuality: renderQualitySchema.optional(),
   })
   .strict();

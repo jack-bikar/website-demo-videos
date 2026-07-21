@@ -17,18 +17,19 @@
     "stepPauseMs": 0
   },
   "meta": {
-    "playbackSpeed": 1.3,
+    "playbackSpeed": 1,
     "captions": false,
     "zoom": false,
-    "preserveStart": false,
+    "preserveStart": true,
     "trimTailMs": 1500,
     "trimMergeMaxGapMs": 6000,
     "trimDeadAirGapMs": 6000,
     "loadingOverlay": true,
-    "loadingOverlaySeconds": 2.7,
+    "loadingOverlaySeconds": 1,
     "topCropPx": 0,
-    "finalSettleMs": 5000,
-    "finalHoldSeconds": 4,
+    "finalSettleMs": 500,
+    "finalHoldSeconds": 0,
+    "smoothMode": "mci",
     "renderQuality": "final"
   },
   "steps": [
@@ -41,27 +42,36 @@
     },
     {
       "type": "wait",
-      "ms": 300,
+      "ms": 5500,
+      "pace": "slow",
+      "direction": "Match vid-example.mov: after the one-second brand card, hold the hero while the vehicle animation plays.",
       "why": "Hold on the hero"
     },
     {
       "type": "scroll",
       "deltaY": 9000,
-      "ms": 7000,
+      "ms": 6000,
+      "pace": "slow",
+      "smoothness": "continuous",
       "linear": true,
       "allowFooter": true,
+      "direction": "Match vid-example.mov: one steady homepage pass from hero through services/testimonials/footer in about six seconds.",
       "why": "One continuous scroll through the entire site at a steady pace"
     },
     {
       "type": "click",
       "target": "header a[href=\"/book\"]",
+      "pace": "normal",
+      "direction": "Keep the transition to the booking page direct and unchanged.",
       "why": "Click the red Book Now button in the header"
     },
     {
       "type": "focus",
       "target": "main form, form, [role=\"form\"]",
       "fitMs": 800,
-      "ms": 5200,
+      "ms": 3800,
+      "pace": "slow",
+      "direction": "Match vid-example.mov: hold the booking form as the final destination for roughly four to five seconds.",
       "why": "Booking page loads — fit the booking form and rest the cursor on its right corner"
     }
   ]

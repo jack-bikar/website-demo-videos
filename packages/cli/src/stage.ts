@@ -32,6 +32,10 @@ const ctx: StageContext = {
   onProgress: ({ value, message }) => emit({ type: 'progress', value, message }),
 };
 
+function smoothModeFor(input: StageInput): SmoothMode | undefined {
+  return input.smoothMode ?? input.plan.meta?.smoothMode;
+}
+
 async function main() {
   loadEnv();
   const type = process.argv[2];
@@ -46,7 +50,7 @@ async function main() {
       break;
     }
     case 'smooth': {
-      const result = await smoothStage({ take: input.take, mode: input.smoothMode }, ctx);
+      const result = await smoothStage({ take: input.take, mode: smoothModeFor(input) }, ctx);
       emit({ type: 'result', data: { mode: result.mode } });
       break;
     }
@@ -75,7 +79,7 @@ async function main() {
       // capture → parallel [smooth, derive] — mirrors the legacy demo.js orchestration.
       const capture = await captureStage(input, ctx);
       emit({ type: 'progress', value: 0.6, message: 'Captured; post-processing' });
-      await Promise.all([smoothStage({ take: input.take, mode: input.smoothMode }, ctx), deriveStage(input, ctx)]);
+      await Promise.all([smoothStage({ take: input.take, mode: smoothModeFor(input) }, ctx), deriveStage(input, ctx)]);
       emit({ type: 'result', data: { durationMs: capture.durationMs, frameCount: capture.frameCount, moments: capture.moments.length } });
       break;
     }

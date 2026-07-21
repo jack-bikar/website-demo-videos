@@ -19,6 +19,18 @@ function applyVars(value: string | undefined, vars: Record<string, string>): str
   return value.replace(TEMPLATE_RE, (whole, name) => (name in vars ? String(vars[name]) : whole));
 }
 
+const PACE_SPEED: Record<string, number> = {
+  'very-slow': 0.75,
+  slow: 1,
+  normal: 1.3,
+  quick: 2,
+};
+
+function stepPlaybackSpeed(step: Step): number | undefined {
+  if (Number.isFinite(step.speed)) return step.speed;
+  return step.pace ? PACE_SPEED[step.pace] : undefined;
+}
+
 /**
  * Wait for a selector, retrying a few times before giving up. A single waitForSelector can
  * lose a race on a busy SPA (element briefly detaches/re-renders); a short retry loop makes
@@ -109,9 +121,10 @@ async function runStep(
       const action = step.caption || step.why || target || type;
       const startMoment: Moment = { time: focusStart, action, type, x: x ?? 0, y: y ?? 0 };
       const endMoment: Moment = { time: Date.now() - t0Ref.t, action, type, x: x ?? 0, y: y ?? 0 };
-      if (Number.isFinite(step.speed)) {
-        startMoment.speed = step.speed;
-        endMoment.speed = step.speed;
+      const speed = stepPlaybackSpeed(step);
+      if (Number.isFinite(speed)) {
+        startMoment.speed = speed;
+        endMoment.speed = speed;
       }
       moments.push(startMoment, endMoment);
       recorded = true;
@@ -127,8 +140,9 @@ async function runStep(
           : baseDur;
       const rest = await cursor.restForScroll(dy, dur);
       const startT = Date.now() - t0Ref.t;
+      const continuous = step.smoothness === 'continuous';
       if (Math.abs(dy) > 1) {
-        await smoothScroll(page, dy, dur, step.linear);
+        await smoothScroll(page, dy, dur, step.linear ?? continuous);
       } else {
         await sleep(220);
       }
@@ -136,15 +150,19 @@ async function runStep(
       // Emit a moment every ~1.2s across the scroll. Without these, a long scroll looks to the
       // trim stage like a big gap between actions (dead air) and gets cut — these keep it as one clip.
       if (Math.abs(dy) > 1) {
-        const waypoints = Math.max(1, Math.ceil((endT - startT) / 1200));
+        const waypointIntervalMs = continuous ? 600 : 1200;
+        const waypoints = Math.max(1, Math.ceil((endT - startT) / waypointIntervalMs));
+        const speed = stepPlaybackSpeed(step);
         for (let w = 1; w <= waypoints; w++) {
-          moments.push({
+          const moment: Moment = {
             time: Math.round(startT + ((endT - startT) * w) / waypoints),
             action: step.caption || step.why || 'scroll',
             type: 'scroll',
             x: rest.x,
             y: rest.y,
-          });
+          };
+          if (Number.isFinite(speed)) moment.speed = speed;
+          moments.push(moment);
         }
       }
       recorded = true;
@@ -171,7 +189,8 @@ async function runStep(
       x: x ?? 0,
       y: y ?? 0,
     };
-    if (Number.isFinite(step.speed)) moment.speed = step.speed;
+    const speed = stepPlaybackSpeed(step);
+    if (Number.isFinite(speed)) moment.speed = speed;
     moments.push(moment);
   }
   ctx.log(`  ✓ step ${index + 1} (${type})${x != null ? ` @ ${x},${y}` : ''}`);
@@ -212,8 +231,11 @@ export async function record(request: CaptureRequest, ctx: StageContext): Promis
       /* about:blank or not ready yet — evaluateOnNewDocument covers the real pages */
     }
 
-    ctx.log(`• Starting screencast (JPEG q${rec.screencastQuality})…`);
-    screencast = await startScreencast(page, viewport, t0Ref, { quality: rec.screencastQuality });
+    ctx.log(`• Starting screencast (JPEG q${rec.screencastQuality}, ${rec.captureFps}fps floor)…`);
+    screencast = await startScreencast(page, viewport, t0Ref, {
+      quality: rec.screencastQuality,
+      captureFps: rec.captureFps,
+    });
 
     const cursor = new CursorController(page);
     // Seat the visible cursor at a natural resting spot (lower-centre) so it's on screen from the

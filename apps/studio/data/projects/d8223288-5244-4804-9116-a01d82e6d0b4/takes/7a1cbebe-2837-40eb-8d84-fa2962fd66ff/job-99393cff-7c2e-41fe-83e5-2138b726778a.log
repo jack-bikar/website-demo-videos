@@ -1,0 +1,4 @@
+◇ injected env (1) from .env.local // tip: ⌘ override existing { override: true }
+◇ injected env (0) from .env // tip: ⌘ override existing { override: true }
+{"type":"log","level":"info","message":"✓ Derived 1 clip(s) and 0 keyframe(s)."}
+{"type":"result","data":{"clips":1,"keyframes":0}}

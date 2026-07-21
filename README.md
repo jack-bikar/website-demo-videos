@@ -72,9 +72,10 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
     "title": "Acme Demo",                    // intro title card  (omit to skip the intro)
     "subtitle": "From email to welcome in two clicks",
     "outro": { "title": "Try it yourself", "subtitle": "localhost:8731" }, // outro CTA card (omit to skip)
-    "playbackSpeed": 4,                      // global footage speed-up (per-step `speed` overrides it)
+    "playbackSpeed": 4,                      // global footage speed-up (per-step `pace`/`speed` overrides it)
     "captions": true,                        // false = no cards and no lower-third subtitles
     "zoom": true,                            // false = steady shot, no per-action zoom in/out
+    "smoothMode": "auto",                    // "auto" | "mci" | "blend" | "fps"; use "mci" for long scrolls
     "renderQuality": "draft"                 // "draft" | "standard" | "final" — final render encode quality
   },
 
@@ -85,7 +86,10 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
       "text": null,                          // text to type (type steps); supports {{var}} templating
       "deltaY": null,                        // scroll distance in px (scroll steps)
       "ms": null,                            // wait duration in ms (wait steps)
-      "speed": null,                         // optional per-step playback speed (e.g. 2 for form-fills)
+      "pace": "normal",                      // "very-slow" | "slow" | "normal" | "quick"
+      "smoothness": "continuous",            // scroll: denser waypoints + constant motion
+      "speed": null,                         // numeric override; wins over `pace`
+      "direction": "Slow, continuous homepage pass.",
       "as": null,                            // capture steps: variable name to store the read value
       "caption": "Open the app",             // the subtitle shown on screen for this step (optional)
       "why": "Land on the home screen"       // a debug/narrative note; caption falls back to this
@@ -119,8 +123,15 @@ So a plain plan still gets sensible subtitles, and you tighten the narration by 
 
 ### Speed control
 
-`meta.playbackSpeed` sets the global speed-up (default **4×**). Any step can override it with `speed` — e.g.
-slow a form-fill to `2` so the typing is readable while clicks stay snappy.
+`meta.playbackSpeed` sets the global speed-up (default **4×**). Use per-step `pace` for readable creative
+direction: `very-slow`, `slow`, `normal`, or `quick`. A numeric `speed` still works and wins over `pace`.
+
+For a homepage pass that should feel gradual while the booking transition stays snappy, put `pace: "slow"`
+on the hero wait and homepage scroll, then `pace: "normal"` on the booking click/focus steps. Speed changes
+become clip boundaries, so the slow homepage section does not bleed into the next scene.
+
+For scroll-heavy videos, set `meta.smoothMode` to `"mci"`. It is slower to process but avoids the repeated
+frame/ghosting artifacts that are most visible during long continuous scrolls.
 
 ### Captures & templating (`{{var}}`)
 

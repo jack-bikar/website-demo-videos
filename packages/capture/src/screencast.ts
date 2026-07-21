@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { Page } from 'puppeteer-core';
 import type { Viewport } from '@wdv/schema';
-import { DEFAULT_SCREENCAST_QUALITY } from './connect';
+import { DEFAULT_CAPTURE_FPS, DEFAULT_SCREENCAST_QUALITY } from './connect';
 
 /** Mutable epoch shared between the screencast and step execution so all timestamps are
  *  video-relative. `t` is (re)set the moment the screencast starts. */
@@ -27,26 +27,53 @@ export interface Screencast {
  * Starts a CDP screencast and collects JPEG frames in memory with their arrival offsets.
  * Steel's native session recording is RRWeb events, not an MP4 — screencasting is how we get
  * actual video frames out of a cloud session.
+ *
+ * Screencast alone is event-driven: Chrome only emits a frame when it repaints, and throttles to
+ * ~25fps during fast scrolls, so motion steps and the video reads as choppy. To get a screen-
+ * recorder-style constant framerate we combine two sources:
+ *   1. the screencast stream — cheap, high-throughput, delivers frames as fast as Chrome paints;
+ *      we ack each frame immediately (before decoding) so Chrome never waits on us to composite
+ *      the next one, which lifts the natural rate.
+ *   2. a fixed-cadence timer — a floor that force-captures a screenshot whenever the screencast
+ *      falls behind `captureFps`, guaranteeing a steady frame spacing through throttled scrolls.
+ * Byte-identical consecutive frames are dropped (Chrome's JPEG encoder is deterministic, so a
+ * static hold yields the same bytes) — that keeps the cadence during motion without exploding a
+ * multi-second hold into hundreds of duplicate frames.
  */
 export async function startScreencast(
   page: Page,
   viewport: Viewport,
   t0Ref: EpochRef,
-  options: { quality?: number } = {},
+  options: { quality?: number; captureFps?: number } = {},
 ): Promise<Screencast> {
   const cdp = await page.createCDPSession();
   const frames: CapturedFrame[] = [];
   const quality = Number.isFinite(options.quality as number)
     ? Math.max(1, Math.min(100, Math.round(options.quality as number)))
     : DEFAULT_SCREENCAST_QUALITY;
+  const captureFps = Number.isFinite(options.captureFps as number)
+    ? Math.max(10, Math.min(60, Math.round(options.captureFps as number)))
+    : DEFAULT_CAPTURE_FPS;
+  const intervalMs = Math.round(1000 / captureFps);
 
-  cdp.on('Page.screencastFrame', async (frame) => {
-    frames.push({ buffer: Buffer.from(frame.data, 'base64'), t: Date.now() - t0Ref.t });
-    try {
-      await cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId });
-    } catch (_e) {
-      /* session may have ended; ignore */
-    }
+  let stopped = false;
+  let lastBuffer: Buffer | null = null;
+  let lastAt = -Infinity; // wall-clock ms of the last frame we recorded (for cadence bookkeeping)
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  // Record a frame, deduping static holds. Always advance `lastAt` (even on a dropped duplicate)
+  // so the timer doesn't hot-loop force-capturing an unchanging page.
+  const record = (buffer: Buffer, now: number) => {
+    lastAt = now;
+    if (lastBuffer && buffer.equals(lastBuffer)) return;
+    frames.push({ buffer, t: now - t0Ref.t });
+    lastBuffer = buffer;
+  };
+
+  cdp.on('Page.screencastFrame', (frame) => {
+    // Ack first (fire-and-forget) so Chrome can paint the next frame without waiting on our decode.
+    cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
+    if (!stopped) record(Buffer.from(frame.data, 'base64'), Date.now());
   });
 
   t0Ref.t = Date.now();
@@ -58,9 +85,32 @@ export async function startScreencast(
     everyNthFrame: 1,
   });
 
+  // Cadence floor: if the screencast hasn't delivered within one interval, grab a screenshot
+  // ourselves. Clipped to the exact viewport at scale 1 so these frames match the screencast's
+  // dimensions (mixed sizes would break the single-resolution concat encode).
+  timer = setInterval(() => {
+    const now = Date.now();
+    if (stopped || now - lastAt < intervalMs) return;
+    cdp
+      .send('Page.captureScreenshot', {
+        format: 'jpeg',
+        quality,
+        clip: { x: 0, y: 0, width: viewport.width, height: viewport.height, scale: 1 },
+      })
+      .then((shot: { data: string }) => {
+        if (!stopped) record(Buffer.from(shot.data, 'base64'), Date.now());
+      })
+      .catch(() => {
+        /* session busy or ended — the next tick retries */
+      });
+  }, intervalMs);
+  timer.unref?.();
+
   return {
     frames,
     stop: async () => {
+      stopped = true;
+      if (timer) clearInterval(timer);
       try {
         await cdp.send('Page.stopScreencast');
       } catch (_e) {
@@ -75,8 +125,13 @@ export async function startScreencast(
  * demuxer with per-frame durations derived from arrival offsets — so the video's timeline
  * matches moments.json (later consumed by the trim stage).
  */
-export function encodeFrames(frames: CapturedFrame[], outPath: string): void {
-  if (frames.length === 0) throw new Error('No frames were captured — recording is empty.');
+export function encodeFrames(input: CapturedFrame[], outPath: string): void {
+  if (input.length === 0) throw new Error('No frames were captured — recording is empty.');
+
+  // Frames arrive from two async sources (the screencast event stream and the cadence timer's
+  // screenshots), so their arrival offsets can interleave slightly out of order. Sort by time so
+  // the per-frame durations below are always non-negative.
+  const frames = [...input].sort((a, b) => a.t - b.t);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'demo-frames-'));
   try {

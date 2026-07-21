@@ -54,9 +54,24 @@ describe('momentsToClips rules', () => {
     expect(clips[clips.length - 1].end).toBe(20000);
   });
 
-  it('carries per-moment speed onto the clip, first action winning a merge', () => {
+  it('carries per-moment speed and splits when the next moment uses the default speed', () => {
     const clips = momentsToClips([moment(5000, 'a', 'click', { speed: 2 }), moment(8000, 'b')]);
-    expect(clips).toEqual([{ start: 4500, end: 9000, action: 'a', type: 'click', speed: 2 }]);
+    expect(clips).toEqual([
+      { start: 4500, end: 6000, action: 'a', type: 'click', speed: 2 },
+      { start: 7500, end: 9000, action: 'b', type: 'click' },
+    ]);
+  });
+
+  it('keeps speed changes as clip boundaries without overlapping repeated footage', () => {
+    const clips = momentsToClips([
+      moment(5000, 'homepage', 'scroll', { speed: 1 }),
+      moment(6200, 'homepage', 'scroll', { speed: 1 }),
+      moment(7000, 'booking transition', 'click', { speed: 1.3 }),
+    ]);
+    expect(clips).toEqual([
+      { start: 4500, end: 6500, action: 'homepage', type: 'scroll', speed: 1 },
+      { start: 6500, end: 8000, action: 'booking transition', type: 'click', speed: 1.3 },
+    ]);
   });
 
   it('sorts unordered moments before windowing', () => {
