@@ -17,12 +17,16 @@ browse-plan.json ──▶ record ──▶ smooth ──▶ trim ──▶ keyf
 ## Requirements
 
 - **Node.js** 18+
-- **ffmpeg** on your `PATH` (`which ffmpeg`) — used to encode frames and the final video
-- For **cloud** recording only: a [Steel](https://steel.dev) API key
+- **pnpm** 10+ — this is a pnpm monorepo (packages use the `workspace:*` protocol, so plain `npm install` won't resolve them)
+- **ffmpeg** and **ffprobe** on your `PATH` (`which ffmpeg ffprobe`) — used to capture, smooth, and encode the video
+- **Google Chrome / Chromium** installed for `local` recording; for `cloud` recording, a [Steel](https://steel.dev) API key
 
 ```bash
-npm install
+pnpm install
 ```
+
+> The pipeline scripts (`record`, `smooth`, `trim`, `keyframes`, `render`, `demo`) run under either
+> `npm run <script>` or `pnpm <script>` — only **installation** must use pnpm.
 
 If you'll record public URLs in the cloud, put your key in `.env.local` (never commit it):
 
@@ -41,10 +45,11 @@ echo "STEEL_API_KEY=sk-..." > .env.local
 2. **Run the pipeline:**
 
    ```bash
-   npm run demo
+   npm run demo          # uses recording.mode from the plan (cloud needs STEEL_API_KEY)
+   npm run demo:local    # force local-Chrome recording, ignore the plan's mode
    ```
 
-   This chains `record → trim → keyframes → render` and writes **`output/demo.mp4`**.
+   This chains `record → smooth → trim → keyframes → render` and writes **`output/demo.mp4`**.
 
 To preview interactively before rendering: `npm run studio`.
 
@@ -65,7 +70,8 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
     "headful": false,                        // local mode: show the window instead of headless
     "userDataDir": null,                     // local mode: reuse a Chrome profile dir (start logged in)
     "chromePath": null,                      // local mode: explicit Chrome/Chromium executable path
-    "screencastQuality": 92                  // capture JPEG quality, higher reduces scroll shimmer
+    "screencastQuality": 82,                 // capture JPEG quality (1–100); higher reduces scroll shimmer
+    "captureFps": 30                         // constant capture-cadence floor (see Smooth, continuous capture)
   },
 
   "meta": {                                  // the on-screen polish (all optional)
@@ -81,7 +87,7 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
 
   "steps": [
     {
-      "type": "navigate",                    // navigate | click | type | scroll | wait | capture
+      "type": "navigate",                    // navigate | click | type | scroll | focus | wait | capture
       "target": "http://localhost:8731",     // a URL (navigate) or a selector (click/type/capture)
       "text": null,                          // text to type (type steps); supports {{var}} templating
       "deltaY": null,                        // scroll distance in px (scroll steps)
@@ -105,8 +111,9 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
 | `navigate` | Go to a URL | `target` (URL) |
 | `click` | Click an element | `target` (selector) |
 | `type` | Click then type text, char-by-char | `target` (selector), `text` |
-| `scroll` | Smooth-scroll the page | `deltaY` (px) |
-| `wait` | Pause (let async UI settle) | `ms` |
+| `scroll` | Smooth-scroll the page | `deltaY` (px), `ms`, `smoothness: "continuous"` |
+| `focus` | Scroll a large element into frame and hold a framed shot | `target` (selector), `fitMs`, `ms` |
+| `wait` | Pause (let async UI settle) — avoid for a continuous feel | `ms` |
 | `capture` | Read an element's on-screen text into a variable | `target` (selector), `as` (name) |
 
 **Selector tips:** prefer stable hooks — `[data-tour="…"]` / `[data-testid="…"]` survive copy and layout
@@ -126,9 +133,14 @@ So a plain plan still gets sensible subtitles, and you tighten the narration by 
 `meta.playbackSpeed` sets the global speed-up (default **4×**). Use per-step `pace` for readable creative
 direction: `very-slow`, `slow`, `normal`, or `quick`. A numeric `speed` still works and wins over `pace`.
 
-For a homepage pass that should feel gradual while the booking transition stays snappy, put `pace: "slow"`
-on the hero wait and homepage scroll, then `pace: "normal"` on the booking click/focus steps. Speed changes
-become clip boundaries, so the slow homepage section does not bleed into the next scene.
+For a homepage pass that feels gradual while the booking transition stays snappy, put `pace: "slow"` on the
+homepage scroll, then `pace: "normal"` on the booking click/focus steps. Speed changes become clip
+boundaries, so the slow homepage section does not bleed into the next scene.
+
+**For a continuous, no-dead-air feel:** avoid static `wait` steps — keep something moving at all times. A
+single slow `scroll` with `"smoothness": "continuous"` (e.g. the whole page over ~12s) starts motion from
+the first frame and reads far better than a hold-then-scroll. The cursor keeps moving through `click`/`focus`
+transitions, so the only place a still frame creeps in is a long `focus` dwell — keep its `ms` short.
 
 For scroll-heavy videos, set `meta.smoothMode` to `"mci"`. It is slower to process but avoids the repeated
 frame/ghosting artifacts that are most visible during long continuous scrolls.
@@ -193,45 +205,54 @@ All connections use a 180s CDP timeout, so a busy SPA won't trip `Runtime.callFu
 | `npm run trim` | Cut dead air → `scripts/clips.json` |
 | `npm run keyframes` | Generate camera zooms → `scripts/keyframes.json` |
 | `npm run render` | Render the composition → `output/demo.mp4` |
-| `npm run preview` | Open the interactive preview/editor (cut, retime, set render quality) |
-| `npm run studio` | Open the Remotion studio to preview |
+| `npm run studio` | Open the interactive Next.js studio (preview, cut/retime, render quality) |
+| `npm run studio:remotion` | Open the raw Remotion studio for composition debugging |
 
 Each stage writes a real file, so stages are independently re-runnable and debuggable. After tweaking the
 plan's `meta` (captions/speed), you only need to re-run `npm run render`.
 
-### Preview tool (`npm run preview`)
+### Smoothness: continuous capture + interpolation
 
-The preview tool is a browser editor for the recorded footage — cut dead air, retime sections, and pick the
-render quality before rendering:
+A CDP screencast is event-driven — Chrome only emits a frame when it repaints and throttles to ~25fps, so
+fast scrolls step and static holds stall. Two stages fix this:
 
-- **Render quality** — pick **Draft** (fast `veryfast`/CRF 26 encode, good for testing), **Standard**, or
-  **Final** (`slow`/CRF 16, best quality) before rendering. The choice is saved to `meta.renderQuality`, so
-  `npm run render` honors it too. Override per-run with `DEMO_RENDER_QUALITY=final npm run render`; explicit
-  `DEMO_RENDER_CRF` / `DEMO_RENDER_PRESET` still take precedence.
+1. **Capture** floors the frame rate at `recording.captureFps` (default **30**): whenever the screencast
+   falls behind, the recorder force-captures a screenshot, so motion never drops below a steady cadence.
+   Override per-run with `DEMO_CAPTURE_FPS=30 npm run record`. Pair it with `smoothness: "continuous"` on
+   long `scroll` steps for a constant-velocity pass.
+2. **Smooth** (`npm run smooth`) interpolates that capture up to a 60fps copy in `public/raw.mp4`, leaving
+   `recordings/raw.mp4` untouched. Modes, set via `meta.smoothMode` or `DEMO_SMOOTH_MODE`:
+   - `blend` — fast, fine for iteration, but **ghosts moving content** (double-images on scroll).
+   - `mci` — motion-compensated; the clean, no-ghost pass. **Use this for the final** scroll-heavy render
+     (slower — minutes for a ~30s clip).
+   - `fps` — plain constant-FPS conversion, no interpolation.
+   - `auto` — `mci` for short clips, `blend` for longer ones.
 
-For scroll-heavy demos, `npm run smooth` is the important quality stage: CDP screencasts often capture at
-roughly 15-25fps, so the smoother writes an interpolated 60fps copy to `public/raw.mp4` while leaving
-`recordings/raw.mp4` untouched. The default `blend` mode is fast enough for normal iteration. Use
-`DEMO_SMOOTH_MODE=mci npm run smooth` for the cleanest motion-compensated final pass when you can wait, or
-`DEMO_SMOOTH_MODE=fps npm run smooth` for a plain constant-FPS conversion with no interpolation.
+**Render quality** is set with `meta.renderQuality` (`draft` | `standard` | `final`) or per-run with
+`DEMO_RENDER_QUALITY=final npm run render`; explicit `DEMO_RENDER_CRF` / `DEMO_RENDER_PRESET` win over both.
 
 ---
 
 ## How it works
 
-1. **Record** ([`scripts/record.js`](scripts/record.js)) drives the browser through your steps with
-   human-like pacing and captures real video frames over the Chrome DevTools Protocol screencast, encoding
-   them to `recordings/raw.mp4` with ffmpeg (real-time paced). It records a `moment` per step with its
-   timestamp, click coordinates, caption, and optional speed.
-2. **Smooth** ([`scripts/smooth.js`](scripts/smooth.js)) turns the low-frame-rate CDP capture into the
-   60fps source Remotion reads from `public/raw.mp4`.
-3. **Trim** ([`scripts/trim.js`](scripts/trim.js)) turns moments into clips, padding each action and cutting
-   the dead air between far-apart actions.
-4. **Keyframes** ([`scripts/keyframes.js`](scripts/keyframes.js)) emits a zoom-in/zoom-out pair per action so
-   the camera eases toward each click.
-5. **Render** ([`remotion/DemoVideo.tsx`](remotion/DemoVideo.tsx)) composites it all: the footage in a
-   rounded browser frame on a gradient background, animated zooms, lower-third captions, and the intro/outro
-   cards — reading the caption track and speed straight from `browse-plan.json`'s `meta`.
+1. **Record** ([`packages/capture`](packages/capture/src/recorder.ts)) drives the browser through your steps
+   with human-like pacing and captures real video frames over the Chrome DevTools Protocol screencast (with
+   the constant-cadence floor above), encoding them to `recordings/raw.mp4` with ffmpeg. It records a
+   `moment` per step with its timestamp, click coordinates, caption, and optional speed.
+2. **Smooth** ([`packages/render`](packages/render/src/smooth.ts)) interpolates the capture into the 60fps
+   source Remotion reads from `public/raw.mp4`.
+3. **Trim** ([`packages/timeline`](packages/timeline/src/trim.ts)) turns moments into clips, padding each
+   action and cutting the dead air between far-apart actions.
+4. **Keyframes** ([`packages/timeline`](packages/timeline/src/keyframes.ts)) emits a zoom-in/zoom-out pair
+   per action so the camera eases toward each click.
+5. **Render** ([`packages/compositions`](packages/compositions) + [`remotion/Root.tsx`](remotion/Root.tsx))
+   composites it all: the footage in a rounded browser frame on a gradient background, animated zooms,
+   lower-third captions, and the intro/outro cards — reading the caption track and speed straight from
+   `browse-plan.json`'s `meta`.
+
+The pipeline lives in the [`packages/`](packages/) monorepo (schema, timeline, capture, render,
+compositions, engine); [`apps/studio`](apps/studio) is the Next.js studio. The root `npm run` scripts in the
+table above are thin wrappers over `packages/cli`.
 
 ### Files
 
