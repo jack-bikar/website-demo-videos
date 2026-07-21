@@ -177,8 +177,8 @@ async function runStep(
       throw new Error(`Unknown step type: ${type}`);
   }
 
-  // `silent` steps (e.g. the initial navigate + hydration wait) record no moment, so the trim
-  // stage starts the clip at the first real action and the page-load footage is cut off the front.
+  // `silent` steps record no moment. Leading silent setup runs before the screencast starts;
+  // later silent steps still happen in the recording but do not create kept clip windows.
   if (!recorded && !step.silent) {
     const moment: Moment = {
       time: Date.now() - t0Ref.t,
@@ -231,19 +231,8 @@ export async function record(request: CaptureRequest, ctx: StageContext): Promis
       /* about:blank or not ready yet — evaluateOnNewDocument covers the real pages */
     }
 
-    ctx.log(`• Starting screencast (JPEG q${rec.screencastQuality}, ${rec.captureFps}fps floor)…`);
-    screencast = await startScreencast(page, viewport, t0Ref, {
-      quality: rec.screencastQuality,
-      captureFps: rec.captureFps,
-    });
-
     const cursor = new CursorController(page);
-    // Seat the visible cursor at a natural resting spot (lower-centre) so it's on screen from the
-    // first frame — it stays put while the page scrolls, then glides to targets on interaction.
-    await cursor.place(Math.round(viewport.width * 0.5), Math.round(viewport.height * 0.68));
-
-    ctx.log(`• Executing ${plan.steps.length} steps…`);
-    for (let i = 0; i < plan.steps.length; i++) {
+    const runPlanStep = async (i: number): Promise<void> => {
       if (ctx.signal?.aborted) throw new Error('Capture canceled.');
       const step = plan.steps[i];
       try {
@@ -259,6 +248,30 @@ export async function record(request: CaptureRequest, ctx: StageContext): Promis
       ctx.onProgress?.({ value: (i + 1) / (plan.steps.length + 1), message: `Step ${i + 1}/${plan.steps.length}` });
       if (rec.stepPauseMs !== null) await sleep(rec.stepPauseMs);
       else await humanPause();
+    };
+
+    // Leading silent steps are setup, not footage. Running them before the screencast means
+    // `preserveStart` can keep the authored opening hold without also keeping page-load dead time.
+    let firstRecordedStep = 0;
+    while (firstRecordedStep < plan.steps.length && plan.steps[firstRecordedStep].silent) {
+      if (firstRecordedStep === 0) ctx.log('• Executing leading setup steps before recording…');
+      await runPlanStep(firstRecordedStep);
+      firstRecordedStep++;
+    }
+
+    ctx.log(`• Starting screencast (JPEG q${rec.screencastQuality}, ${rec.captureFps}fps floor)…`);
+    screencast = await startScreencast(page, viewport, t0Ref, {
+      quality: rec.screencastQuality,
+      captureFps: rec.captureFps,
+    });
+
+    // Seat the visible cursor at a natural resting spot (lower-centre) so it's on screen from the
+    // first frame — it stays put while the page scrolls, then glides to targets on interaction.
+    await cursor.place(Math.round(viewport.width * 0.5), Math.round(viewport.height * 0.68));
+
+    ctx.log(`• Executing ${plan.steps.length - firstRecordedStep} recorded steps…`);
+    for (let i = firstRecordedStep; i < plan.steps.length; i++) {
+      await runPlanStep(i);
     }
 
     // Let the final state settle on screen before we cut. CDP screencast delivery can lag during
@@ -273,7 +286,7 @@ export async function record(request: CaptureRequest, ctx: StageContext): Promis
   const frames = screencast ? screencast.frames : [];
   ctx.log(`• Captured ${frames.length} frames; encoding to ${rawVideoPath}…`);
   ctx.onProgress?.({ value: 0.95, message: 'Encoding frames' });
-  encodeFrames(frames, rawVideoPath);
+  encodeFrames(frames, rawVideoPath, { fps: rec.captureFps });
 
   fs.writeFileSync(momentsPath, JSON.stringify(moments, null, 2));
   const durationMs = moments.length

@@ -6,10 +6,16 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "test": "vitest run"
+  },
   "dependencies": {
     "@wdv/schema": "workspace:*",
     "dotenv": "^17.3.1",
     "puppeteer-core": "^25.1.0",
     "steel-sdk": "^0.18.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0"
   }
 }

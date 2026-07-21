@@ -41,38 +41,31 @@
       "why": "Load the homepage"
     },
     {
-      "type": "wait",
-      "ms": 5500,
-      "pace": "slow",
-      "direction": "Match vid-example.mov: after the one-second brand card, hold the hero while the vehicle animation plays.",
-      "why": "Hold on the hero"
-    },
-    {
       "type": "scroll",
       "deltaY": 9000,
-      "ms": 6000,
+      "ms": 12000,
       "pace": "slow",
       "smoothness": "continuous",
       "linear": true,
       "allowFooter": true,
-      "direction": "Match vid-example.mov: one steady homepage pass from hero through services/testimonials/footer in about six seconds.",
-      "why": "One continuous scroll through the entire site at a steady pace"
+      "direction": "Never hold static. Begin scrolling the moment the page is up and glide down the whole homepage in one unbroken, gentle pass (~750px/s). The hero still reads because the first couple of seconds barely move; there is no separate hero hold.",
+      "why": "One slow continuous scroll through the entire site — motion from the very first frame"
     },
     {
       "type": "click",
       "target": "header a[href=\"/book\"]",
       "pace": "normal",
-      "direction": "Keep the transition to the booking page direct and unchanged.",
+      "direction": "As the scroll settles at the footer, glide the cursor up to the red Book Now button and click — the cursor is the moving element during the page transition.",
       "why": "Click the red Book Now button in the header"
     },
     {
       "type": "focus",
       "target": "main form, form, [role=\"form\"]",
-      "fitMs": 800,
-      "ms": 3800,
+      "fitMs": 1100,
+      "ms": 1400,
       "pace": "slow",
-      "direction": "Match vid-example.mov: hold the booking form as the final destination for roughly four to five seconds.",
-      "why": "Booking page loads — fit the booking form and rest the cursor on its right corner"
+      "direction": "Ease the booking form into frame and let the cursor drift to rest near it. Keep the framing motion gentle and brief — no long static hold on the form.",
+      "why": "Booking page loads — fit the booking form with a short, moving settle"
     }
   ]
 }

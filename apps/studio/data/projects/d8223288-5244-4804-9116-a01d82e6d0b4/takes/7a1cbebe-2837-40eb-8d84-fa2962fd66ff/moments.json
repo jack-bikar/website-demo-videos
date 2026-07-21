@@ -1,72 +1,122 @@
 [
   {
-    "time": 6993,
+    "time": 5532,
     "action": "Hold on the hero",
     "type": "wait",
     "x": 960,
-    "y": 734
+    "y": 734,
+    "speed": 1
   },
   {
-    "time": 9907,
-    "action": "One continuous scroll through the site",
+    "time": 6946,
+    "action": "One continuous scroll through the entire site at a steady pace",
     "type": "scroll",
     "x": 1114,
-    "y": 719
+    "y": 719,
+    "speed": 1
   },
   {
-    "time": 11074,
-    "action": "One continuous scroll through the site",
+    "time": 7491,
+    "action": "One continuous scroll through the entire site at a steady pace",
     "type": "scroll",
     "x": 1114,
-    "y": 719
+    "y": 719,
+    "speed": 1
   },
   {
-    "time": 12242,
-    "action": "One continuous scroll through the site",
+    "time": 8037,
+    "action": "One continuous scroll through the entire site at a steady pace",
     "type": "scroll",
     "x": 1114,
-    "y": 719
+    "y": 719,
+    "speed": 1
   },
   {
-    "time": 13409,
-    "action": "One continuous scroll through the site",
+    "time": 8583,
+    "action": "One continuous scroll through the entire site at a steady pace",
     "type": "scroll",
     "x": 1114,
-    "y": 719
+    "y": 719,
+    "speed": 1
   },
   {
-    "time": 14577,
-    "action": "One continuous scroll through the site",
+    "time": 9128,
+    "action": "One continuous scroll through the entire site at a steady pace",
     "type": "scroll",
     "x": 1114,
-    "y": 719
+    "y": 719,
+    "speed": 1
   },
   {
-    "time": 15744,
-    "action": "One continuous scroll through the site",
+    "time": 9674,
+    "action": "One continuous scroll through the entire site at a steady pace",
     "type": "scroll",
     "x": 1114,
-    "y": 719
+    "y": 719,
+    "speed": 1
   },
   {
-    "time": 17957,
-    "action": "Click Book Now",
+    "time": 10219,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719,
+    "speed": 1
+  },
+  {
+    "time": 10765,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719,
+    "speed": 1
+  },
+  {
+    "time": 11311,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719,
+    "speed": 1
+  },
+  {
+    "time": 11856,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719,
+    "speed": 1
+  },
+  {
+    "time": 12402,
+    "action": "One continuous scroll through the entire site at a steady pace",
+    "type": "scroll",
+    "x": 1114,
+    "y": 719,
+    "speed": 1
+  },
+  {
+    "time": 14163,
+    "action": "Click the red Book Now button in the header",
     "type": "click",
     "x": 1335,
-    "y": 32
+    "y": 32,
+    "speed": 1.3
   },
   {
-    "time": 18473,
-    "action": "Fit the booking form",
+    "time": 14182,
+    "action": "Booking page loads — fit the booking form and rest the cursor on its right corner",
     "type": "focus",
     "x": 1399,
-    "y": 296
+    "y": 296,
+    "speed": 1
   },
   {
-    "time": 25592,
-    "action": "Fit the booking form",
+    "time": 19991,
+    "action": "Booking page loads — fit the booking form and rest the cursor on its right corner",
     "type": "focus",
     "x": 1399,
-    "y": 296
+    "y": 296,
+    "speed": 1
   }
 ]

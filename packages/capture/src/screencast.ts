@@ -23,6 +23,13 @@ export interface Screencast {
   stop: () => Promise<void>;
 }
 
+export interface EncodeFrameOptions {
+  /** Constant output framerate for the raw capture. */
+  fps?: number;
+  /** Hold the final captured frame for this long so final moments can clamp cleanly. */
+  tailMs?: number;
+}
+
 /**
  * Starts a CDP screencast and collects JPEG frames in memory with their arrival offsets.
  * Steel's native session recording is RRWeb events, not an MP4 — screencasting is how we get
@@ -120,49 +127,78 @@ export async function startScreencast(
   };
 }
 
+const clampEncodeFps = (fps: number | undefined): number => {
+  const value = Number.isFinite(fps) ? Math.round(fps as number) : DEFAULT_CAPTURE_FPS;
+  return Math.max(10, Math.min(60, value));
+};
+
+const frameName = (index: number, prefix = 'frame') => `${prefix}-${String(index).padStart(6, '0')}.jpg`;
+
+function linkOrCopy(source: string, target: string): void {
+  try {
+    fs.linkSync(source, target);
+  } catch (_e) {
+    fs.copyFileSync(source, target);
+  }
+}
+
 /**
- * Encode captured frames to an MP4 that preserves real-time pacing, using the ffmpeg concat
- * demuxer with per-frame durations derived from arrival offsets — so the video's timeline
- * matches moments.json (later consumed by the trim stage).
+ * Encode captured frames to a constant-cadence MP4 that preserves real-time pacing.
+ *
+ * The old concat-demuxer/VFR path wrote per-frame durations, but ffmpeg still treated the image
+ * input as a 25fps stream and silently dropped sub-40ms cadence frames. Here we first materialize a
+ * CFR image sequence at the requested capture FPS, reusing each latest captured frame until a newer
+ * timestamp is due. Repeated frames are hardlinked, so long static holds remain cheap on disk while
+ * the resulting MP4 behaves like a real screen recording.
  */
-export function encodeFrames(input: CapturedFrame[], outPath: string): void {
+export function encodeFrames(input: CapturedFrame[], outPath: string, options: EncodeFrameOptions = {}): void {
   if (input.length === 0) throw new Error('No frames were captured — recording is empty.');
 
   // Frames arrive from two async sources (the screencast event stream and the cadence timer's
   // screenshots), so their arrival offsets can interleave slightly out of order. Sort by time so
-  // the per-frame durations below are always non-negative.
+  // the sequence below is always monotonic.
   const frames = [...input].sort((a, b) => a.t - b.t);
+  const fps = clampEncodeFps(options.fps);
+  const intervalMs = 1000 / fps;
+  const tailMs = Number.isFinite(options.tailMs) ? Math.max(0, options.tailMs as number) : 1000;
+  const durationMs = Math.max(intervalMs, Math.max(0, frames[frames.length - 1].t) + tailMs);
+  const outputFrameCount = Math.max(1, Math.ceil(durationMs / intervalMs) + 1);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'demo-frames-'));
   try {
-    const lines: string[] = [];
     for (let i = 0; i < frames.length; i++) {
-      const file = path.join(tmpDir, `frame-${String(i).padStart(5, '0')}.jpg`);
+      const file = path.join(tmpDir, frameName(i, 'source'));
       fs.writeFileSync(file, frames[i].buffer);
-      // Duration until the next frame (clamped); last frame held for 1s.
-      const next = i < frames.length - 1 ? frames[i + 1].t : frames[i].t + 1000;
-      const dur = Math.max(0.016, (next - frames[i].t) / 1000);
-      lines.push(`file '${file}'`);
-      lines.push(`duration ${dur.toFixed(3)}`);
     }
-    // The concat demuxer needs the final file repeated for its duration to apply.
-    lines.push(`file '${path.join(tmpDir, `frame-${String(frames.length - 1).padStart(5, '0')}.jpg`)}'`);
 
-    const listFile = path.join(tmpDir, 'frames.txt');
-    fs.writeFileSync(listFile, lines.join('\n'));
+    let sourceIndex = 0;
+    for (let i = 0; i < outputFrameCount; i++) {
+      const t = i * intervalMs;
+      while (sourceIndex < frames.length - 1 && frames[sourceIndex + 1].t <= t + 0.5) {
+        sourceIndex++;
+      }
+      const source = path.join(tmpDir, frameName(sourceIndex, 'source'));
+      const target = path.join(tmpDir, frameName(i));
+      linkOrCopy(source, target);
+    }
 
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     const res = spawnSync(
       'ffmpeg',
       [
+        '-hide_banner',
+        '-nostats',
+        '-loglevel', 'warning',
         '-y',
-        '-f', 'concat',
-        '-safe', '0',
-        '-i', listFile,
-        '-vsync', 'vfr',
+        '-framerate', String(fps),
+        '-start_number', '0',
+        '-i', path.join(tmpDir, 'frame-%06d.jpg'),
         // Screencast frames can come back with an odd height (e.g. 1280x713); libx264 + yuv420p
         // require even dimensions, so round both down to the nearest even number.
         '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-r', String(fps),
+        '-fps_mode', 'cfr',
+        '-an',
         '-pix_fmt', 'yuv420p',
         '-c:v', 'libx264',
         '-preset', 'veryfast',

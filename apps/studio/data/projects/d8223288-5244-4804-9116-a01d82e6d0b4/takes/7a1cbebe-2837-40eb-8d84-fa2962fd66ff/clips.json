@@ -1,8 +1,9 @@
 [
   {
-    "start": 6493,
-    "end": 28160,
+    "start": 0,
+    "end": 21533,
     "action": "Hold on the hero",
-    "type": "wait"
+    "type": "wait",
+    "speed": 1
   }
 ]
