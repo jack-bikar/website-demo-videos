@@ -20,6 +20,9 @@ export interface CapturedFrame {
 
 export interface Screencast {
   frames: CapturedFrame[];
+  captureViewportFrameAt: (t: number) => Promise<boolean>;
+  setLiveCaptureEnabled: (enabled: boolean) => void;
+  setScreenshotOnlyMode: (enabled: boolean) => void;
   stop: () => Promise<void>;
 }
 
@@ -64,12 +67,23 @@ export async function startScreencast(
   const intervalMs = Math.round(1000 / captureFps);
 
   let stopped = false;
+  let liveCaptureEnabled = true;
+  let screencastFramesEnabled = true;
+  let fallbackInFlight = false;
   let lastBuffer: Buffer | null = null;
   let lastAt = -Infinity; // wall-clock ms of the last frame we recorded (for cadence bookkeeping)
   let timer: ReturnType<typeof setInterval> | null = null;
 
   // Record a frame, deduping static holds. Always advance `lastAt` (even on a dropped duplicate)
   // so the timer doesn't hot-loop force-capturing an unchanging page.
+  const recordAt = (buffer: Buffer, t: number): boolean => {
+    lastAt = Date.now();
+    if (lastBuffer && buffer.equals(lastBuffer)) return false;
+    frames.push({ buffer, t });
+    lastBuffer = buffer;
+    return true;
+  };
+
   const record = (buffer: Buffer, now: number) => {
     lastAt = now;
     if (lastBuffer && buffer.equals(lastBuffer)) return;
@@ -80,7 +94,7 @@ export async function startScreencast(
   cdp.on('Page.screencastFrame', (frame) => {
     // Ack first (fire-and-forget) so Chrome can paint the next frame without waiting on our decode.
     cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
-    if (!stopped) record(Buffer.from(frame.data, 'base64'), Date.now());
+    if (!stopped && liveCaptureEnabled && screencastFramesEnabled) record(Buffer.from(frame.data, 'base64'), Date.now());
   });
 
   t0Ref.t = Date.now();
@@ -92,29 +106,66 @@ export async function startScreencast(
     everyNthFrame: 1,
   });
 
-  // Cadence floor: if the screencast hasn't delivered within one interval, grab a screenshot
-  // ourselves. Clipped to the exact viewport at scale 1 so these frames match the screencast's
-  // dimensions (mixed sizes would break the single-resolution concat encode).
+  // Cadence floor: if the screencast hasn't delivered within one interval, grab a viewport
+  // screenshot ourselves. Continuous scrolls can force this into screenshot-only mode because CDP
+  // screencast frames may include the page's scroll offset instead of the visible viewport.
   timer = setInterval(() => {
     const now = Date.now();
-    if (stopped || now - lastAt < intervalMs) return;
+    if (stopped || !liveCaptureEnabled || fallbackInFlight || now - lastAt < intervalMs) return;
+    fallbackInFlight = true;
     cdp
       .send('Page.captureScreenshot', {
         format: 'jpeg',
         quality,
-        clip: { x: 0, y: 0, width: viewport.width, height: viewport.height, scale: 1 },
+        fromSurface: true,
+        captureBeyondViewport: false,
       })
       .then((shot: { data: string }) => {
-        if (!stopped) record(Buffer.from(shot.data, 'base64'), Date.now());
+        const shotAt = Date.now();
+        if (stopped) return;
+        const buffer = Buffer.from(shot.data, 'base64');
+        // During long compositor-driven scrolls Chrome can transiently return just the body
+        // background from captureScreenshot. Keep the last real frame instead of encoding that.
+        if (frames.length > 0 && isLikelyBlankFallbackFrame(buffer, viewport)) {
+          lastAt = shotAt;
+          return;
+        }
+        record(buffer, shotAt);
       })
       .catch(() => {
         /* session busy or ended — the next tick retries */
+      })
+      .finally(() => {
+        fallbackInFlight = false;
       });
   }, intervalMs);
   timer.unref?.();
 
   return {
     frames,
+    captureViewportFrameAt: async (t) => {
+      const shot = await cdp.send('Page.captureScreenshot', {
+        format: 'jpeg',
+        quality,
+        fromSurface: true,
+        captureBeyondViewport: false,
+      });
+      if (stopped) return false;
+      const buffer = Buffer.from((shot as { data: string }).data, 'base64');
+      if (frames.length > 0 && isLikelyBlankFallbackFrame(buffer, viewport)) {
+        lastAt = Date.now();
+        return false;
+      }
+      return recordAt(buffer, Math.max(0, Math.round(t)));
+    },
+    setLiveCaptureEnabled: (enabled) => {
+      liveCaptureEnabled = enabled;
+      lastAt = enabled ? Date.now() - intervalMs : Date.now();
+    },
+    setScreenshotOnlyMode: (enabled) => {
+      screencastFramesEnabled = !enabled;
+      if (enabled) lastAt = Date.now() - intervalMs;
+    },
     stop: async () => {
       stopped = true;
       if (timer) clearInterval(timer);
@@ -133,6 +184,12 @@ const clampEncodeFps = (fps: number | undefined): number => {
 };
 
 const frameName = (index: number, prefix = 'frame') => `${prefix}-${String(index).padStart(6, '0')}.jpg`;
+
+export function isLikelyBlankFallbackFrame(buffer: Buffer, viewport: Pick<Viewport, 'width' | 'height'>): boolean {
+  const pixels = Math.max(1, viewport.width * viewport.height);
+  const minUsefulBytes = Math.max(12_000, Math.round(pixels * 0.02));
+  return buffer.length < minUsefulBytes;
+}
 
 function linkOrCopy(source: string, target: string): void {
   try {

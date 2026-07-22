@@ -3,12 +3,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { encodeFrames, type CapturedFrame } from '../src/screencast';
+import { encodeFrames, isLikelyBlankFallbackFrame, type CapturedFrame } from '../src/screencast';
 
 const hasTool = (tool: string) => spawnSync(tool, ['-version'], { stdio: 'ignore' }).status === 0;
 const itWithFfmpeg = hasTool('ffmpeg') && hasTool('ffprobe') ? it : it.skip;
 
 function makeJpeg(tmpDir: string, name: string, color: string): Buffer {
+  return makeLavfiJpeg(tmpDir, name, `color=c=${color}:s=160x90:d=0.01`);
+}
+
+function makeLavfiJpeg(tmpDir: string, name: string, input: string): Buffer {
   const file = path.join(tmpDir, `${name}.jpg`);
   const result = spawnSync(
     'ffmpeg',
@@ -17,7 +21,7 @@ function makeJpeg(tmpDir: string, name: string, color: string): Buffer {
       '-loglevel', 'error',
       '-y',
       '-f', 'lavfi',
-      '-i', `color=c=${color}:s=160x90:d=0.01`,
+      '-i', input,
       '-frames:v', '1',
       file,
     ],
@@ -50,6 +54,20 @@ function probeVideo(file: string): Record<string, string> {
 }
 
 describe('encodeFrames', () => {
+  itWithFfmpeg('flags suspiciously tiny full-viewport fallback screenshots as blank', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdv-capture-test-'));
+    try {
+      const viewport = { width: 1920, height: 1080 };
+      const blank = makeLavfiJpeg(tmpDir, 'blank', 'color=c=white:s=1920x1080:d=0.01');
+      const content = makeLavfiJpeg(tmpDir, 'content', 'testsrc2=s=1920x1080:d=0.01');
+
+      expect(isLikelyBlankFallbackFrame(blank, viewport)).toBe(true);
+      expect(isLikelyBlankFallbackFrame(content, viewport)).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   itWithFfmpeg('keeps sub-40ms cadence frames instead of quantizing to 25fps', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wdv-capture-test-'));
     try {

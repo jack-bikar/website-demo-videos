@@ -16,11 +16,11 @@ export const PROTOCOL_TIMEOUT = 180000;
 // return frames consistently.
 export const DEFAULT_SCREENCAST_QUALITY = 82;
 
-// CDP screencast is event-driven — Chrome only pushes a frame when it repaints, and throttles to
-// ~25fps under load, so fast scrolls step and static holds stall. We floor the capture at a steady
-// cadence by force-grabbing a screenshot whenever the screencast falls behind. 30 is comfortably
-// achievable in a cloud session and gives the mci smoothing stage a clean base to interpolate to 60.
-export const DEFAULT_CAPTURE_FPS = 30;
+// CDP screencast is event-driven — Chrome only pushes a frame when it repaints, and throttles under
+// load, so fast scrolls step and static holds stall. We floor the capture at the final render rate by
+// force-grabbing a screenshot whenever the screencast falls behind; this gives long scrolls a real
+// 60fps source instead of asking interpolation to invent most of the motion later.
+export const DEFAULT_CAPTURE_FPS = 60;
 
 const truthy = (v: unknown) => ['1', 'true', 'yes'].includes(String(v || '').toLowerCase());
 

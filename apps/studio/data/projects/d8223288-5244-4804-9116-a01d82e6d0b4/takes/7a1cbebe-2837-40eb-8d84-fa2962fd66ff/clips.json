@@ -1,9 +1,9 @@
 [
   {
     "start": 0,
-    "end": 21533,
-    "action": "Hold on the hero",
-    "type": "wait",
+    "end": 14100,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
+    "type": "scroll",
     "speed": 1
   }
 ]

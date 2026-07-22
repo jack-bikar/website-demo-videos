@@ -1,102 +1,94 @@
 [
   {
-    "time": 5532,
-    "action": "Hold on the hero",
-    "type": "wait",
-    "x": 960,
-    "y": 734,
-    "speed": 1
-  },
-  {
-    "time": 6946,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 1468,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 7491,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 2045,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 8037,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 2622,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 8583,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 3199,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 9128,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 3776,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 9674,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 4354,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 10219,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 4931,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 10765,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 5508,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 11311,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 6085,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 11856,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 6662,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 12402,
-    "action": "One continuous scroll through the entire site at a steady pace",
+    "time": 7239,
+    "action": "One slow continuous scroll through the entire site — motion from the very first frame",
     "type": "scroll",
     "x": 1114,
     "y": 719,
     "speed": 1
   },
   {
-    "time": 14163,
+    "time": 8954,
     "action": "Click the red Book Now button in the header",
     "type": "click",
     "x": 1335,
@@ -104,16 +96,16 @@
     "speed": 1.3
   },
   {
-    "time": 14182,
-    "action": "Booking page loads — fit the booking form and rest the cursor on its right corner",
+    "time": 8970,
+    "action": "Booking page loads — fit the booking form with a short, moving settle",
     "type": "focus",
     "x": 1399,
     "y": 296,
     "speed": 1
   },
   {
-    "time": 19991,
-    "action": "Booking page loads — fit the booking form and rest the cursor on its right corner",
+    "time": 12586,
+    "action": "Booking page loads — fit the booking form with a short, moving settle",
     "type": "focus",
     "x": 1399,
     "y": 296,

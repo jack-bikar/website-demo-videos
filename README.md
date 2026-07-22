@@ -71,7 +71,7 @@ Everything lives in `scripts/browse-plan.json`. Here is every field:
     "userDataDir": null,                     // local mode: reuse a Chrome profile dir (start logged in)
     "chromePath": null,                      // local mode: explicit Chrome/Chromium executable path
     "screencastQuality": 82,                 // capture JPEG quality (1–100); higher reduces scroll shimmer
-    "captureFps": 30                         // constant capture-cadence floor (see Smooth, continuous capture)
+    "captureFps": 60                         // constant capture-cadence floor (see Smooth, continuous capture)
   },
 
   "meta": {                                  // the on-screen polish (all optional)
@@ -216,12 +216,13 @@ plan's `meta` (captions/speed), you only need to re-run `npm run render`.
 A CDP screencast is event-driven — Chrome only emits a frame when it repaints and throttles to ~25fps, so
 fast scrolls step and static holds stall. Two stages fix this:
 
-1. **Capture** floors the frame rate at `recording.captureFps` (default **30**): whenever the screencast
+1. **Capture** floors the frame rate at `recording.captureFps` (default **60**): whenever the screencast
    falls behind, the recorder force-captures a screenshot, so motion never drops below a steady cadence.
    Override per-run with `DEMO_CAPTURE_FPS=30 npm run record`. Pair it with `smoothness: "continuous"` on
    long `scroll` steps for a constant-velocity pass.
 2. **Smooth** (`npm run smooth`) interpolates that capture up to a 60fps copy in `public/raw.mp4`, leaving
-   `recordings/raw.mp4` untouched. Modes, set via `meta.smoothMode` or `DEMO_SMOOTH_MODE`:
+   `recordings/raw.mp4` untouched. If the source is already 60fps, this uses a constant-FPS pass instead
+   of no-op interpolation. Modes, set via `meta.smoothMode` or `DEMO_SMOOTH_MODE`:
    - `blend` — fast, fine for iteration, but **ghosts moving content** (double-images on scroll).
    - `mci` — motion-compensated; the clean, no-ghost pass. **Use this for the final** scroll-heavy render
      (slower — minutes for a ~30s clip).

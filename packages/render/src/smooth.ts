@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import type { StageContext } from '@wdv/schema';
-import { getDurationSeconds, isValidVideo } from './probe';
+import { getDurationSeconds, getVideoFps, isValidVideo } from './probe';
 
 /**
  * Frame interpolation. CDP screencast capture is often only ~15-25fps at 1080p; rendering
@@ -46,12 +46,18 @@ export function smooth(request: SmoothRequest, ctx: StageContext): { outputPath:
   const requestedMode = request.mode ?? 'auto';
   const autoMciMaxSeconds = request.autoMciMaxSeconds ?? 12;
   const durationSeconds = getDurationSeconds(inputPath);
-  const mode: Exclude<SmoothMode, 'auto'> =
+  let mode: Exclude<SmoothMode, 'auto'> =
     requestedMode === 'auto'
       ? durationSeconds > 0 && durationSeconds <= autoMciMaxSeconds
         ? 'mci'
         : 'blend'
       : requestedMode;
+
+  const inputFps = getVideoFps(inputPath);
+  if (inputFps >= targetFps - 0.5 && mode !== 'fps') {
+    ctx.log(`• Source is already ${inputFps.toFixed(2)}fps; using CFR pass instead of ${mode} interpolation.`);
+    mode = 'fps';
+  }
 
   const filter = filters(targetFps)[mode];
   if (!filter) {

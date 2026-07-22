@@ -336,7 +336,33 @@ export async function clampTourScrollDelta(
   allowFooter = false,
   log: (line: string) => void = () => {},
 ): Promise<number> {
-  if (allowFooter || requestedDeltaY <= 0) return requestedDeltaY;
+  if (allowFooter || requestedDeltaY <= 0) {
+    const result = await page.evaluate((requested) => {
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      const viewportH = window.innerHeight || document.documentElement.clientHeight || 800;
+      const doc = document.documentElement;
+      const body = document.body;
+      const scrollHeight = Math.max(
+        doc ? doc.scrollHeight : 0,
+        body ? body.scrollHeight : 0,
+        doc ? doc.offsetHeight : 0,
+        body ? body.offsetHeight : 0,
+      );
+      const normalMaxY = Math.max(0, scrollHeight - viewportH);
+      const requestedY = scrollY + requested;
+      const targetY = Math.min(normalMaxY, Math.max(0, requestedY));
+
+      return {
+        deltaY: Math.round(targetY - scrollY),
+        clamped: Math.abs(targetY - requestedY) > 2,
+      };
+    }, requestedDeltaY);
+
+    if (result && result.clamped) {
+      log(`  ↳ scroll clamped to page bounds (${Math.round(requestedDeltaY)}px requested, ${result.deltaY}px used)`);
+    }
+    return result && Number.isFinite(result.deltaY) ? result.deltaY : requestedDeltaY;
+  }
 
   const result = await page.evaluate((requested) => {
     const scrollY = window.scrollY || document.documentElement.scrollTop || 0;

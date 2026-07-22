@@ -26,9 +26,60 @@ const PACE_SPEED: Record<string, number> = {
   quick: 2,
 };
 
+const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
 function stepPlaybackSpeed(step: Step): number | undefined {
   if (Number.isFinite(step.speed)) return step.speed;
   return step.pace ? PACE_SPEED[step.pace] : undefined;
+}
+
+async function settleScrollFrame(page: Page, targetY: number): Promise<void> {
+  await page.evaluate(
+    (y) =>
+      new Promise<void>((resolve) => {
+        window.scrollTo(0, y);
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+    targetY,
+  );
+}
+
+async function captureDeterministicScroll(
+  page: Page,
+  screencast: Screencast,
+  t0Ref: EpochRef,
+  deltaY: number,
+  durationMs: number,
+  captureFps: number,
+  linear: boolean,
+  ctx: StageContext,
+): Promise<{ startT: number; endT: number }> {
+  const fps = Math.max(10, Math.min(60, Math.round(captureFps)));
+  const intervalMs = 1000 / fps;
+  const frameCount = Math.max(2, Math.round(durationMs / intervalMs) + 1);
+  const wallStart = Date.now();
+  const startT = wallStart - t0Ref.t;
+  const startY = await page.evaluate(() => window.scrollY || document.documentElement.scrollTop || 0);
+  let virtualElapsed = 0;
+
+  ctx.log(`  ↳ rendering deterministic scroll (${frameCount} frames @ ${fps}fps)`);
+  screencast.setLiveCaptureEnabled(false);
+  try {
+    for (let i = 0; i < frameCount; i++) {
+      const elapsed = i === frameCount - 1 ? durationMs : Math.min(durationMs, i * intervalMs);
+      const progress = durationMs > 0 ? Math.min(1, elapsed / durationMs) : 1;
+      const eased = linear ? progress : easeInOutCubic(progress);
+      await settleScrollFrame(page, startY + deltaY * eased);
+      await screencast.captureViewportFrameAt(startT + elapsed);
+      virtualElapsed = elapsed;
+    }
+  } finally {
+    const wallElapsed = Date.now() - wallStart;
+    t0Ref.t += wallElapsed - virtualElapsed;
+    screencast.setLiveCaptureEnabled(true);
+  }
+
+  return { startT, endT: startT + durationMs };
 }
 
 /**
@@ -64,6 +115,8 @@ async function runStep(
   index: number,
   vars: Record<string, string>,
   ctx: StageContext,
+  captureFps: number,
+  screencast?: Screencast,
 ): Promise<void> {
   const type = step.type;
   const target = applyVars(step.target, vars);
@@ -139,14 +192,30 @@ async function runStep(
           ? Math.max(500, Math.round(baseDur * (Math.abs(dy) / Math.abs(requestedDy))))
           : baseDur;
       const rest = await cursor.restForScroll(dy, dur);
-      const startT = Date.now() - t0Ref.t;
       const continuous = step.smoothness === 'continuous';
+      const deterministic = Math.abs(dy) > 1 && (continuous || step.linear === true) && screencast;
+      let startT = Date.now() - t0Ref.t;
+      let endT = startT;
       if (Math.abs(dy) > 1) {
-        await smoothScroll(page, dy, dur, step.linear ?? continuous);
+        if (deterministic) {
+          ({ startT, endT } = await captureDeterministicScroll(
+            page,
+            screencast,
+            t0Ref,
+            dy,
+            dur,
+            captureFps,
+            step.linear ?? continuous,
+            ctx,
+          ));
+        } else {
+          await smoothScroll(page, dy, dur, step.linear ?? continuous);
+          endT = Date.now() - t0Ref.t;
+        }
       } else {
         await sleep(220);
+        endT = Date.now() - t0Ref.t;
       }
-      const endT = Date.now() - t0Ref.t;
       // Emit a moment every ~1.2s across the scroll. Without these, a long scroll looks to the
       // trim stage like a big gap between actions (dead air) and gets cut — these keep it as one clip.
       if (Math.abs(dy) > 1) {
@@ -236,7 +305,7 @@ export async function record(request: CaptureRequest, ctx: StageContext): Promis
       if (ctx.signal?.aborted) throw new Error('Capture canceled.');
       const step = plan.steps[i];
       try {
-        await runStep(page, cursor, step, t0Ref, moments, i, vars, ctx);
+        await runStep(page, cursor, step, t0Ref, moments, i, vars, ctx, rec.captureFps, screencast);
       } catch (err) {
         ctx.warn(`  ⚠ step ${i + 1} (${step.type}) failed: ${(err as Error).message} — continuing.`);
         try {
