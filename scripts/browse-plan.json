@@ -1,5 +1,5 @@
 {
-  "url": "https://astaxis.vercel.app/",
+  "url": "https://harbourtaxis.vercel.app/",
   "viewport": {
     "width": 1920,
     "height": 1080
@@ -26,6 +26,19 @@
     "trimDeadAirGapMs": 6000,
     "loadingOverlay": true,
     "loadingOverlaySeconds": 1,
+    "overlay": {
+      "id": "brand-intro",
+      "seconds": 1,
+      "props": {
+        "kicker": "CHANNEL ISLANDS",
+        "titleLines": [
+          "HARBOUR",
+          "TAXI DEMO"
+        ],
+        "footerLeft": "GUERNSEY",
+        "footerRight": "DEMO"
+      }
+    },
     "topCropPx": 0,
     "finalSettleMs": 500,
     "finalHoldSeconds": 0,
@@ -35,7 +48,7 @@
   "steps": [
     {
       "type": "navigate",
-      "target": "https://astaxis.vercel.app/",
+      "target": "https://harbourtaxis.vercel.app/",
       "waitUntil": "networkidle2",
       "silent": true,
       "why": "Load the homepage"

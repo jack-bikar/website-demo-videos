@@ -53,6 +53,9 @@ echo "STEEL_API_KEY=sk-..." > .env.local
 
 To preview interactively before rendering: `npm run studio`.
 
+For the high-quality continuous-scroll style used by the Harbour Taxi Demo, follow
+[`docs/walkthrough-video-quality-playbook.md`](docs/walkthrough-video-quality-playbook.md).
+
 ---
 
 ## Configuration (one file)

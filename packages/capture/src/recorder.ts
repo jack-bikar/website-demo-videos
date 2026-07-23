@@ -44,6 +44,27 @@ async function settleScrollFrame(page: Page, targetY: number): Promise<void> {
   );
 }
 
+async function setPageHoverSuppressed(page: Page, suppressed: boolean): Promise<void> {
+  await page.evaluate(
+    (enabled) =>
+      new Promise<void>((resolve) => {
+        const STYLE_ID = '__demoNoHoverStyle__';
+        let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+        if (!style) {
+          style = document.createElement('style');
+          style.id = STYLE_ID;
+          style.textContent =
+            'html.__demoNoHover body * { pointer-events: none !important; }' +
+            'html.__demoNoHover #__demoCursor__, html.__demoNoHover #__demoCursor__ * { pointer-events: none !important; }';
+          document.documentElement.appendChild(style);
+        }
+        document.documentElement.classList.toggle('__demoNoHover', enabled);
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+    suppressed,
+  );
+}
+
 async function captureDeterministicScroll(
   page: Page,
   screencast: Screencast,
@@ -65,6 +86,7 @@ async function captureDeterministicScroll(
   ctx.log(`  ↳ rendering deterministic scroll (${frameCount} frames @ ${fps}fps)`);
   screencast.setLiveCaptureEnabled(false);
   try {
+    await setPageHoverSuppressed(page, true);
     for (let i = 0; i < frameCount; i++) {
       const elapsed = i === frameCount - 1 ? durationMs : Math.min(durationMs, i * intervalMs);
       const progress = durationMs > 0 ? Math.min(1, elapsed / durationMs) : 1;
@@ -74,6 +96,7 @@ async function captureDeterministicScroll(
       virtualElapsed = elapsed;
     }
   } finally {
+    await setPageHoverSuppressed(page, false).catch(() => {});
     const wallElapsed = Date.now() - wallStart;
     t0Ref.t += wallElapsed - virtualElapsed;
     screencast.setLiveCaptureEnabled(true);
